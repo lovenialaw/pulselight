@@ -368,19 +368,50 @@ function lstmPredictLevel(zoneIdx, dateStr, hourInt, currentPeople){
   return levelFromDemand(lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople));
 }
 
+// ── Time-step / interval sampling (matches refresh: 10s · 30s · 60s) ──
+function secondsIntoCurrentHour(now){
+  return now.getMinutes() * 60 + now.getSeconds() + now.getMilliseconds() / 1000;
+}
+function isDatasetDateToday(dateStr){
+  return clampDate(dateStr) === clampDate(todayStr());
+}
+function interpolatedPeopleRaw(zoneIdx, dateStr, now){
+  const d = clampDate(dateStr);
+  const h = now.getHours();
+  const zk = String(zoneIdx);
+  const row0 = DS[d]?.[zk]?.[String(h)];
+  if(!row0) return null;
+  const row1 = DS[d]?.[zk]?.[String(h + 1)] ?? row0;
+  return row0.p + (row1.p - row0.p) * (secondsIntoCurrentHour(now) / 3600);
+}
+function hourlyKwhFromPeople(people){
+  return people * 0.0045 + 8;
+}
+function intervalSliceKwh(intervalSec, hourlyKwhRate){
+  return hourlyKwhRate * (intervalSec / 3600);
+}
+
 // ── GET ZONE DATA from real dataset ──────────────────────
 function getZoneData(zoneIdx){
+  const now = new Date();
   const date = clampDate(todayStr());
-  const hour = String(new Date().getHours());
-  const hourInt = new Date().getHours();
+  const hour = String(now.getHours());
+  const hourInt = now.getHours();
   const zk   = String(zoneIdx);
   const row  = DS[date]?.[zk]?.[hour];
   if (!row) return null;
 
-  // Apply ±3% live jitter to people count so each refresh shows updated values
   const jitter = 0.97 + Math.random() * 0.06;
-  const livePeople = Math.round(row.p * jitter);
+  const rawP = interpolatedPeopleRaw(zoneIdx, date, now);
+  const livePeople = Math.round((rawP != null ? rawP : row.p) * jitter);
   const level = lstmPredictLevel(zoneIdx, date, hourInt, livePeople);
+
+  const intervalSec = refreshIntervalMs / 1000;
+  const rateNormal = hourlyKwhFromPeople(livePeople);
+  const rateAi = rateNormal * (BRIGHT_MAP[level] / 100) * 0.85;
+  const sliceNormal = intervalSliceKwh(intervalSec, rateNormal);
+  const sliceAi = intervalSliceKwh(intervalSec, rateAi);
+  const intervalSavedPct = sliceNormal > 1e-6 ? Math.round((1 - sliceAi / sliceNormal) * 100) : 0;
 
   const weather = liveWeather ? liveWeather.label : row.w;
   const liveTemp = liveWeather
@@ -396,9 +427,13 @@ function getZoneData(zoneIdx){
     level,
     brightness:  BRIGHT_MAP[level],
     piezo:       randInt(100, 620),
-    harvested:   +(randInt(30, 80) * 0.1).toFixed(1),
+    harvested:   +(randInt(30, 80) * 0.1 * Math.sqrt(intervalSec / 60)).toFixed(1),
     battery:     randInt(35, 95),
-    energySaved: Math.round(25 + (BRIGHT_MAP[level] === 0 ? 65 : (100 - BRIGHT_MAP[level]) * 0.5)),
+    intervalSec,
+    sliceNormalKwh: +sliceNormal.toFixed(4),
+    sliceAiKwh: +sliceAi.toFixed(4),
+    intervalSavedPct,
+    energySaved: intervalSavedPct,
   };
 }
 
@@ -413,19 +448,38 @@ function getHourlyData(zoneIdx, dateStr){
   const zoneDay = DS[d]?.[zk];
   if (!zoneDay) return null;
 
+  const now = new Date();
+  const today = isDatasetDateToday(d);
+  const hNow = now.getHours();
+  const fracHour = today ? secondsIntoCurrentHour(now) / 3600 : 1;
+
   const hours  = Array.from({length:24}, (_,h)=>`${String(h).padStart(2,'0')}:00`);
   const normal = hours.map((_,h) => {
+    if (today && h > hNow) return 0;
     const row = zoneDay[String(h)];
     if (!row) return 0;
-    // Normal system: always 100% brightness proportional to crowd
-    return +((row.p * 0.0045 + 8).toFixed(1));
+    if (today && h === hNow){
+      const raw = interpolatedPeopleRaw(zoneIdx, d, now);
+      const p = raw != null ? raw : row.p;
+      return +(hourlyKwhFromPeople(p) * fracHour).toFixed(2);
+    }
+    return +hourlyKwhFromPeople(row.p).toFixed(1);
   });
   const ai = hours.map((_,h) => {
+    if (today && h > hNow) return 0;
     const row = zoneDay[String(h)];
     if (!row) return 0;
+    if (today && h === hNow){
+      const raw = interpolatedPeopleRaw(zoneIdx, d, now);
+      const p = raw != null ? raw : row.p;
+      const pInt = Math.round(p);
+      const level = lstmPredictLevel(zoneIdx, d, h, pInt);
+      const dimFactor = BRIGHT_MAP[level] / 100;
+      return +(hourlyKwhFromPeople(p) * dimFactor * 0.85 * fracHour).toFixed(2);
+    }
     const level = lstmPredictLevel(zoneIdx, d, h, row.p);
     const dimFactor = BRIGHT_MAP[level] / 100;
-    return +((row.p * 0.0045 + 8) * dimFactor * 0.85).toFixed(1);
+    return +(hourlyKwhFromPeople(row.p) * dimFactor * 0.85).toFixed(1);
   });
   return { hours, normal, ai };
 }
@@ -464,7 +518,9 @@ function setInterval_(secs){
   clearInterval(refreshTimerId);
   clearInterval(countdownTimerId);
   startCountdown();
-  refreshTimerId = setInterval(()=>{ refreshAll(); startCountdown(); }, refreshIntervalMs);
+  refreshTimerId = setInterval(()=>{
+    fetchLiveWeather(false).finally(()=>{ refreshAll(); startCountdown(); });
+  }, refreshIntervalMs);
 }
 
 function startCountdown(){
@@ -569,24 +625,35 @@ function renderLightStatus(d){
 
 // ── RENDER ANALYTICS ──────────────────────────────────────
 function renderAnalytics(d){
-  const aiUsage = 100 - d.energySaved;
-  const daily = (d.harvested * 24 / 1000).toFixed(2);
+  const sec = d.intervalSec;
+  const n = d.sliceNormalKwh;
+  const a = d.sliceAiKwh;
+  const pct = d.intervalSavedPct;
+  const aiShare = n > 1e-6 ? Math.min(100, (a / n) * 100) : 0;
   document.getElementById('analytics-chips').innerHTML=`
     <div class="metric-chip">
-      <div class="metric-num" style="color:var(--c-green)">${d.energySaved}%</div>
-      <div class="metric-label">Energy saved vs normal</div>
+      <div class="metric-num" style="color:var(--c-green)">${pct}%</div>
+      <div class="metric-label">Saved vs normal · last ${sec}s</div>
     </div>
     <div class="metric-chip">
-      <div class="metric-num" style="color:var(--c-accent2)">${daily}</div>
-      <div class="metric-label">Est. daily harvest (kWh)</div>
+      <div class="metric-num" style="color:var(--c-accent2)">${n.toFixed(3)}</div>
+      <div class="metric-label">Normal kWh · ${sec}s window</div>
+    </div>
+    <div class="metric-chip">
+      <div class="metric-num" style="color:var(--c-muted2)">${a.toFixed(3)}</div>
+      <div class="metric-label">AI kWh · ${sec}s window</div>
+    </div>
+    <div class="metric-chip">
+      <div class="metric-num" style="color:var(--c-med)">${sec}s</div>
+      <div class="metric-label">Sample interval (charts + compare)</div>
     </div>`;
   document.getElementById('compare').innerHTML=`
     <div class="compare-row">
-      <div class="compare-label"><span>AI system · ${ZONES[d.zoneIdx].name}</span><span style="color:var(--c-green)">${aiUsage}%</span></div>
-      <div class="bar-track"><div class="bar-seg" style="width:${aiUsage}%;background:var(--c-green)"></div></div>
+      <div class="compare-label"><span>AI share of normal · ${sec}s</span><span style="color:var(--c-green)">${aiShare.toFixed(1)}%</span></div>
+      <div class="bar-track"><div class="bar-seg" style="width:${aiShare}%;background:var(--c-green)"></div></div>
     </div>
     <div class="compare-row">
-      <div class="compare-label"><span>Rule-based / Normal</span><span>100%</span></div>
+      <div class="compare-label"><span>Normal · ${ZONES[d.zoneIdx].name}</span><span>100%</span></div>
       <div class="bar-track"><div class="bar-seg" style="width:100%;background:var(--c-muted)"></div></div>
     </div>`;
 }
@@ -597,8 +664,9 @@ function renderGraph(){
   const data = getHourlyData(selectedZone, dateStr);
   const zone = ZONES[selectedZone];
 
+  const step = refreshIntervalMs / 1000;
   document.getElementById('graph-label').textContent =
-    `6 — Daily usage · ${zone.name} · AI vs Normal (kWh) · ${formatDate(dateStr)}`;
+    `6 — Daily usage · ${zone.name} · kWh · ${formatDate(dateStr)} · sample ${step}s · today’s hour grows with time`;
 
   const ctx = document.getElementById('usageChart').getContext('2d');
   if(chartInstance) chartInstance.destroy();

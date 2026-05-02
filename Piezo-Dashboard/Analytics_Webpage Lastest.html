@@ -338,14 +338,60 @@ function lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople){
 function lstmPredictLevel(zoneIdx, dateStr, hourInt, currentPeople){
   return levelFromDemand(lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople));
 }
+function secondsIntoCurrentHour(now){
+  return now.getMinutes()*60+now.getSeconds()+now.getMilliseconds()/1000;
+}
+function isDatasetDateToday(dateStr){
+  return clamp(dateStr)===clamp(todayStr());
+}
+function interpolatedPeopleRaw(zoneIdx, dateStr, now){
+  const d=clamp(dateStr);
+  const h=now.getHours();
+  const zk=String(zoneIdx);
+  const row0=DS[d]?.[zk]?.[String(h)];
+  if(!row0) return null;
+  const row1=DS[d]?.[zk]?.[String(h+1)]??row0;
+  return row0.p+(row1.p-row0.p)*(secondsIntoCurrentHour(now)/3600);
+}
+function hourlyKwhFromPeople(people){
+  return people*0.0045+8;
+}
+function intervalSliceKwh(intervalSec, hourlyKwhRate){
+  return hourlyKwhRate*(intervalSec/3600);
+}
 function levelColor(l){ return l==='HIGH'?'#ff6b35':l==='MEDIUM'?'#f5c518':l==='LOW'?'#18d4f0':'#3a4459'; }
 
 function getHourlyData(zoneIdx, dateStr){
   const d=clamp(dateStr), zk=String(zoneIdx), zoneDay=DS[d]?.[zk];
   if(!zoneDay) return null;
+  const now=new Date();
+  const today=isDatasetDateToday(d);
+  const hNow=now.getHours();
+  const fracHour=today?secondsIntoCurrentHour(now)/3600:1;
   const hours=Array.from({length:24},(_,h)=>`${String(h).padStart(2,'0')}:00`);
-  const normal=hours.map((_,h)=>{ const r=zoneDay[String(h)]; return r?+((r.p*0.0045+8).toFixed(1)):0; });
-  const ai=hours.map((_,h)=>{ const r=zoneDay[String(h)]; if(!r) return 0; const dim=BRIGHT_MAP[lstmPredictLevel(zoneIdx,d,h,r.p)]/100; return +((r.p*0.0045+8)*dim*0.85).toFixed(1); });
+  const normal=hours.map((_,h)=>{
+    if(today&&h>hNow) return 0;
+    const r=zoneDay[String(h)]; if(!r) return 0;
+    if(today&&h===hNow){
+      const raw=interpolatedPeopleRaw(zoneIdx,d,now);
+      const p=raw!=null?raw:r.p;
+      return +(hourlyKwhFromPeople(p)*fracHour).toFixed(2);
+    }
+    return +hourlyKwhFromPeople(r.p).toFixed(1);
+  });
+  const ai=hours.map((_,h)=>{
+    if(today&&h>hNow) return 0;
+    const r=zoneDay[String(h)]; if(!r) return 0;
+    if(today&&h===hNow){
+      const raw=interpolatedPeopleRaw(zoneIdx,d,now);
+      const p=raw!=null?raw:r.p;
+      const pInt=Math.round(p);
+      const dim=BRIGHT_MAP[lstmPredictLevel(zoneIdx,d,h,pInt)]/100;
+      return +(hourlyKwhFromPeople(p)*dim*0.85*fracHour).toFixed(2);
+    }
+    const dim=BRIGHT_MAP[lstmPredictLevel(zoneIdx,d,h,r.p)]/100;
+    return +(hourlyKwhFromPeople(r.p)*dim*0.85).toFixed(1);
+  });
   return {hours,normal,ai};
 }
 
@@ -412,9 +458,16 @@ function renderZoneChips(dateStr){
     if(!s) return '';
     const now=new Date(), curHour=String(now.getHours());
     const curRow=DS[d]?.[String(i)]?.[curHour];
-    const baseP=curRow?curRow.p:0;
+    const rawInterp=interpolatedPeopleRaw(i,d,now);
+    const baseP=rawInterp!=null?rawInterp:(curRow?curRow.p:0);
     const curPeople=Math.round(baseP*(0.97+Math.random()*0.06));
     const curLevel=lstmPredictLevel(i, d, parseInt(curHour,10), curPeople);
+    const ivSec=aRefreshMs/1000;
+    const rateN=hourlyKwhFromPeople(curPeople);
+    const rateA=rateN*(BRIGHT_MAP[curLevel]/100)*0.85;
+    const sN=intervalSliceKwh(ivSec,rateN);
+    const sA=intervalSliceKwh(ivSec,rateA);
+    const ivPct=sN>1e-6?Math.round((1-sA/sN)*100):0;
     return `<div class="zone-chip" style="border-color:${z.hex}30;">
       <div class="zone-chip-header">
         <div class="zone-chip-icon">${z.icon}</div>
@@ -425,7 +478,8 @@ function renderZoneChips(dateStr){
       </div>
       <div class="zone-chip-stat"><span class="zone-chip-key">Current level</span><span class="zone-chip-val"><span class="level-badge" style="background:${levelColor(curLevel)}22;color:${levelColor(curLevel)};border:0.5px solid ${levelColor(curLevel)}55;">${curLevel}</span></span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">Peak people</span><span class="zone-chip-val" style="color:${z.hex}">${s.maxPeople.toLocaleString()}</span></div>
-      <div class="zone-chip-stat"><span class="zone-chip-key">Energy saved</span><span class="zone-chip-val" style="color:#39e07a">${s.saved}%</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Energy saved (day)</span><span class="zone-chip-val" style="color:#39e07a">${s.saved}%</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Saved · last ${ivSec}s</span><span class="zone-chip-val" style="color:#39e07a">${ivPct}%</span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">AI total</span><span class="zone-chip-val">${s.totalAI} kWh</span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">Normal total</span><span class="zone-chip-val">${s.totalNormal} kWh</span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">Weather</span><span class="zone-chip-val">${weatherChipHtml(i,s)}</span></div>
@@ -445,8 +499,9 @@ function renderTotalMetrics(dateStr){
     totPeak+=s.maxPeople;
   }
   const saved=((totNorm-totAI)/totNorm*100).toFixed(1);
+  const step=aRefreshMs/1000;
   document.getElementById('total-metrics').innerHTML=`
-    <div class="metric-chip"><div class="metric-num" style="color:#39e07a">${saved}%</div><div class="metric-label">Total energy saved</div><div class="metric-sub">AI vs normal across all zones</div></div>
+    <div class="metric-chip"><div class="metric-num" style="color:#39e07a">${saved}%</div><div class="metric-label">Total energy saved</div><div class="metric-sub">Day model · AI vs normal · charts refresh every ${step}s</div></div>
     <div class="metric-chip"><div class="metric-num" style="color:#a78bfa">${totAI.toFixed(1)}</div><div class="metric-label">AI total (kWh)</div><div class="metric-sub">All 4 zones combined</div></div>
     <div class="metric-chip"><div class="metric-num" style="color:#8a96ad">${totNorm.toFixed(1)}</div><div class="metric-label">Normal total (kWh)</div><div class="metric-sub">Without AI optimisation</div></div>
     <div class="metric-chip"><div class="metric-num" style="color:#f5c518">${totPeak.toLocaleString()}</div><div class="metric-label">Combined peak people</div><div class="metric-sub">Across all zones · ${formatDate(d)}</div></div>`;
@@ -456,7 +511,7 @@ function renderTotalMetrics(dateStr){
 function renderAllZonesGraph(){
   const dateStr=document.getElementById('allzone-date').value;
   const d=clamp(dateStr);
-  document.getElementById('allzone-graph-label').textContent=`All Zones · AI Optimised Energy Comparison (kWh) · ${formatDate(d)}`;
+  document.getElementById('allzone-graph-label').textContent=`All Zones · AI (kWh) · ${formatDate(d)} · sample ${aRefreshMs/1000}s · today partial hour`;
   const hours=Array.from({length:24},(_,h)=>`${String(h).padStart(2,'00')}:00`.replace(/^(\d):/, '0$1:'));
   const datasets=ZONES.map((z,i)=>{
     const data=getHourlyData(i,d);
@@ -495,7 +550,7 @@ function renderZoneGraph(){
   const dateStr=document.getElementById('zone-date').value;
   const d=clamp(dateStr);
   const zone=ZONES[selectedZonePill];
-  document.getElementById('zone-graph-label').textContent=`${zone.icon} ${zone.name} · AI vs Normal (kWh) · ${formatDate(d)}`;
+  document.getElementById('zone-graph-label').textContent=`${zone.icon} ${zone.name} · AI vs Normal (kWh) · ${formatDate(d)} · sample ${aRefreshMs/1000}s`;
   const data=getHourlyData(selectedZonePill,d);
   const ctx=document.getElementById('zoneChart').getContext('2d');
   if(zoneChart) zoneChart.destroy();
@@ -523,7 +578,7 @@ function renderZoneGraph(){
 function renderCombinedGraph(){
   const dateStr=document.getElementById('combined-date').value;
   const d=clamp(dateStr);
-  document.getElementById('combined-label').textContent=`Combined Total · All Zones AI vs Normal (kWh) · ${formatDate(d)}`;
+  document.getElementById('combined-label').textContent=`Combined Total · AI vs Normal (kWh) · ${formatDate(d)} · sample ${aRefreshMs/1000}s · today partial hour`;
   const hours=Array.from({length:24},(_,h)=>`${String(h).padStart(2,'0')}:00`);
   const normalSum=new Array(24).fill(0), aiSum=new Array(24).fill(0);
   for(let z=0;z<4;z++){
@@ -561,8 +616,8 @@ function renderEfficiencyTable(dateStr){
     const s=getDaySummary(i,d);
     if(!s) return '';
     const savePct=parseFloat(s.saved);
-    const now=new Date(), curRow=DS[d]?.[String(i)]?.[String(now.getHours())];
-    const baseTableP=curRow?.p||0;
+    const now=new Date(), rawT=interpolatedPeopleRaw(i,d,now), curRow=DS[d]?.[String(i)]?.[String(now.getHours())];
+    const baseTableP=rawT!=null?rawT:(curRow?.p||0);
     const livePTable=Math.round(baseTableP*(0.97+Math.random()*0.06));
     const curLevel=lstmPredictLevel(i, d, now.getHours(), livePTable);
     const bright=BRIGHT_MAP[curLevel];
@@ -639,6 +694,9 @@ function refreshAnalyticsPanels(){
     renderZoneChips(d);
     renderTotalMetrics(d);
     renderEfficiencyTable(d);
+    renderAllZonesGraph();
+    renderZoneGraph();
+    renderCombinedGraph();
   });
 }
 
@@ -662,6 +720,12 @@ function setAnalyticsInterval(secs){
   clearInterval(aRefreshTimer);
   clearInterval(aCountdownTimer);
   startAnalyticsCountdown();
+  const dSel = clamp(document.getElementById('allzone-date').value);
+  renderZoneChips(dSel);
+  renderTotalMetrics(dSel);
+  renderAllZonesGraph();
+  renderZoneGraph();
+  renderCombinedGraph();
   aRefreshTimer = setInterval(()=>{ refreshAnalyticsPanels(); startAnalyticsCountdown(); }, aRefreshMs);
 }
 
