@@ -232,6 +232,8 @@ const WEATHER_ICONS = {Clear:'☀️',Cloudy:'☁️',Rain:'🌧️',Drizzle:'�
 const BUKIT_LAT = 3.1478;
 const BUKIT_LON = 101.7053;
 let liveWeather = null;
+let _lastWxFetchAt = 0;
+const WX_FETCH_MIN_MS = 45000;
 
 function wmoToWeatherLabel(code){
   if(code === 0 || code === 1) return 'Clear';
@@ -246,11 +248,13 @@ function wmoToWeatherLabel(code){
   return 'Clear';
 }
 
-async function fetchLiveWeather(){
+async function fetchLiveWeather(force){
+  const now = Date.now();
+  if(!force && liveWeather && (now - _lastWxFetchAt) < WX_FETCH_MIN_MS) return liveWeather;
   try{
     const tz = encodeURIComponent('Asia/Kuala_Lumpur');
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${BUKIT_LAT}&longitude=${BUKIT_LON}&current=temperature_2m,weather_code&timezone=${tz}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' });
     if(!res.ok) throw new Error(String(res.status));
     const j = await res.json();
     const c = j.current;
@@ -258,8 +262,10 @@ async function fetchLiveWeather(){
     liveWeather = {
       label: wmoToWeatherLabel(c.weather_code),
       tempC: c.temperature_2m,
-      code: c.weather_code
+      code: c.weather_code,
+      fetchedAt: Date.now()
     };
+    _lastWxFetchAt = Date.now();
   }catch(e){
     console.warn('Open-Meteo (live weather) failed:', e);
   }
@@ -272,8 +278,32 @@ let allZonesChart = null, zoneChart = null, combinedChart = null;
 let selectedZonePill = 0;
 
 // ── HELPERS ──────────────────────────────────────────────
-function todayStr(){ return new Date().toISOString().split('T')[0]; }
-function clamp(str){ return DS[str] ? str : '2026-05-01'; }
+function todayStr(){
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
+const DS_FIRST = '2026-05-01';
+const DS_LAST  = '2026-05-07';
+function histMaxDate(){
+  const t = todayStr();
+  if (t > DS_LAST) return DS_LAST;
+  if (t < DS_FIRST) return DS_FIRST;
+  return t;
+}
+function clamp(str){
+  const mx = histMaxDate();
+  let s = DS[str] ? str : DS_FIRST;
+  if (s > mx) s = mx;
+  if (s < DS_FIRST) s = DS_FIRST;
+  return DS[s] ? s : DS_FIRST;
+}
+function applyHistoryDateBounds(){
+  const mx = histMaxDate();
+  ['allzone-date','zone-date','combined-date'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el){ el.min = DS_FIRST; el.max = mx; }
+  });
+}
 function formatDate(str){
   if(!str) return '';
   const [y,m,day]=str.split('-');
@@ -334,6 +364,18 @@ const CHART_OPTS = (title) => ({
   }
 });
 
+// Same weather rules as dashboard: Open-Meteo when available, else current hour in DS for that zone (not “most common” for the day).
+function weatherChipHtml(zoneIdx, s){
+  if(liveWeather){
+    return `${WEATHER_ICONS[liveWeather.label]||'🌤️'} ${liveWeather.label} · ${Number(liveWeather.tempC).toFixed(1)}°C <span style="opacity:0.55;font-size:9px;">(Open-Meteo · live)</span>`;
+  }
+  const h = String(new Date().getHours());
+  const dayKey = clamp(todayStr());
+  const r = DS[dayKey]?.[String(zoneIdx)]?.[h];
+  if(r) return `${WEATHER_ICONS[r.w]||''} ${r.w} · ${r.t}°C <span style="opacity:0.55;font-size:9px;">(dataset · now)</span>`;
+  return `${WEATHER_ICONS[s.weather]||''} ${s.weather} <span style="opacity:0.55;font-size:9px;">(dataset · day)</span>`;
+}
+
 // ── RENDER ZONE CHIPS ─────────────────────────────────────
 function renderZoneChips(dateStr){
   const d = clamp(dateStr);
@@ -359,7 +401,7 @@ function renderZoneChips(dateStr){
       <div class="zone-chip-stat"><span class="zone-chip-key">Energy saved</span><span class="zone-chip-val" style="color:#39e07a">${s.saved}%</span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">AI total</span><span class="zone-chip-val">${s.totalAI} kWh</span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">Normal total</span><span class="zone-chip-val">${s.totalNormal} kWh</span></div>
-      <div class="zone-chip-stat"><span class="zone-chip-key">Weather</span><span class="zone-chip-val">${liveWeather ? `${WEATHER_ICONS[liveWeather.label]||'🌤️'} ${liveWeather.label} · ${Number(liveWeather.tempC).toFixed(1)}°C <span style="opacity:0.55;font-size:9px;">(Open-Meteo · live)</span>` : `${WEATHER_ICONS[s.weather]||''} ${s.weather}`}</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Weather</span><span class="zone-chip-val">${weatherChipHtml(i,s)}</span></div>
     </div>`;
   }).join('');
 }
@@ -523,22 +565,41 @@ function renderEfficiencyTable(dateStr){
 // ── DATE CONTROLS ─────────────────────────────────────────
 function shiftDate(inputId, delta){
   const p=document.getElementById(inputId);
-  const d=new Date(p.value||todayStr()); d.setDate(d.getDate()+delta);
-  const str=d.toISOString().split('T')[0];
-  p.value=DS[str]?str:(delta<0?'2026-05-01':'2026-05-07');
+  const cur = clamp(p.value||todayStr());
+  const [y,m,dd]=cur.split('-').map(Number);
+  const d=new Date(y,m-1,dd);
+  d.setDate(d.getDate()+delta);
+  const str=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const mx = histMaxDate();
+  let next = DS[str] ? str : (delta < 0 ? DS_FIRST : mx);
+  if(next > mx) next = mx;
+  if(next < DS_FIRST) next = DS_FIRST;
+  p.value = next;
 }
 
 function setAllZoneToday(){ document.getElementById('allzone-date').value=clamp(todayStr()); onAllZoneDateChange(); }
 function shiftAllZoneDate(delta){ shiftDate('allzone-date',delta); renderAllZonesGraph(); }
-function onAllZoneDateChange(){ renderAllZonesGraph(); }
+function onAllZoneDateChange(){
+  const el = document.getElementById('allzone-date');
+  el.value = clamp(el.value);
+  renderAllZonesGraph();
+}
 
 function setZoneToday(){ document.getElementById('zone-date').value=clamp(todayStr()); renderZoneGraph(); }
 function shiftZoneDate(delta){ shiftDate('zone-date',delta); renderZoneGraph(); }
-function onZoneDateChange(){ renderZoneGraph(); }
+function onZoneDateChange(){
+  const el = document.getElementById('zone-date');
+  el.value = clamp(el.value);
+  renderZoneGraph();
+}
 
 function setCombinedToday(){ document.getElementById('combined-date').value=clamp(todayStr()); renderCombinedGraph(); }
 function shiftCombinedDate(delta){ shiftDate('combined-date',delta); renderCombinedGraph(); }
-function onCombinedDateChange(){ renderCombinedGraph(); }
+function onCombinedDateChange(){
+  const el = document.getElementById('combined-date');
+  el.value = clamp(el.value);
+  renderCombinedGraph();
+}
 
 // ── ANALYTICS REFRESH INTERVAL ────────────────────────────
 let aRefreshMs = 30000;
@@ -547,9 +608,11 @@ let aCountdownTimer = null;
 
 function refreshAnalyticsPanels(){
   const d = clamp(document.getElementById('allzone-date').value);
-  renderZoneChips(d);
-  renderTotalMetrics(d);
-  renderEfficiencyTable(d);
+  fetchLiveWeather(false).finally(()=>{
+    renderZoneChips(d);
+    renderTotalMetrics(d);
+    renderEfficiencyTable(d);
+  });
 }
 
 function startAnalyticsCountdown(){
@@ -577,7 +640,8 @@ function setAnalyticsInterval(secs){
 
 // ── INIT (fetch live weather first so dashboard & analytics match) ──
 (async function(){
-  await fetchLiveWeather();
+  await fetchLiveWeather(true);
+  applyHistoryDateBounds();
   const init=clamp(todayStr());
   document.getElementById('allzone-date').value=init;
   document.getElementById('zone-date').value=init;
@@ -590,7 +654,6 @@ function setAnalyticsInterval(secs){
   renderCombinedGraph();
   renderEfficiencyTable(init);
   setAnalyticsInterval(30);
-  setInterval(()=>{ fetchLiveWeather().then(()=>{ renderZoneChips(clamp(document.getElementById('allzone-date').value)); }); }, 10*60*1000);
 })();
 </script>
 </body>

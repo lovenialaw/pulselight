@@ -250,6 +250,8 @@ const WEATHER_ICONS = { Clear:'☀️', Cloudy:'☁️', Rain:'🌧️', Drizzle
 const BUKIT_LAT = 3.1478;
 const BUKIT_LON = 101.7053;
 let liveWeather = null;
+let _lastWxFetchAt = 0;
+const WX_FETCH_MIN_MS = 45000;
 
 function wmoToWeatherLabel(code){
   if(code === 0 || code === 1) return 'Clear';
@@ -264,11 +266,13 @@ function wmoToWeatherLabel(code){
   return 'Clear';
 }
 
-async function fetchLiveWeather(){
+async function fetchLiveWeather(force){
+  const now = Date.now();
+  if(!force && liveWeather && (now - _lastWxFetchAt) < WX_FETCH_MIN_MS) return liveWeather;
   try{
     const tz = encodeURIComponent('Asia/Kuala_Lumpur');
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${BUKIT_LAT}&longitude=${BUKIT_LON}&current=temperature_2m,weather_code&timezone=${tz}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' });
     if(!res.ok) throw new Error(String(res.status));
     const j = await res.json();
     const c = j.current;
@@ -276,8 +280,10 @@ async function fetchLiveWeather(){
     liveWeather = {
       label: wmoToWeatherLabel(c.weather_code),
       tempC: c.temperature_2m,
-      code: c.weather_code
+      code: c.weather_code,
+      fetchedAt: Date.now()
     };
+    _lastWxFetchAt = Date.now();
   }catch(e){
     console.warn('Open-Meteo (live weather) failed:', e);
   }
@@ -296,8 +302,27 @@ function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
 function levelColor(l){ return l==='HIGH'?'var(--c-high)':l==='MEDIUM'?'var(--c-med)':l==='LOW'?'var(--c-low)':'var(--c-off)'; }
 function levelBg(l){    return l==='HIGH'?'rgba(255,107,53,0.15)':l==='MEDIUM'?'rgba(245,197,24,0.12)':l==='LOW'?'rgba(24,212,240,0.1)':'rgba(58,68,89,0.2)'; }
 function bulbClass(l){  return l==='HIGH'?'on-high':l==='MEDIUM'?'on-med':l==='LOW'?'on-low':'off'; }
-function todayStr(){    return new Date().toISOString().split('T')[0]; }
-function clampDate(str){ return DS[str] ? str : '2026-05-01'; }
+function todayStr(){
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
+// Demo dataset only spans these days (not live telemetry — see comment on DS block).
+const DS_FIRST = '2026-05-01';
+const DS_LAST  = '2026-05-07';
+/** Latest calendar day we allow for charts: today if inside DS range, else dataset bounds (past trends only). */
+function histMaxDate(){
+  const t = todayStr();
+  if (t > DS_LAST) return DS_LAST;
+  if (t < DS_FIRST) return DS_FIRST;
+  return t;
+}
+function clampDate(str){
+  const mx = histMaxDate();
+  let s = DS[str] ? str : DS_FIRST;
+  if (s > mx) s = mx;
+  if (s < DS_FIRST) s = DS_FIRST;
+  return DS[s] ? s : DS_FIRST;
+}
 function formatDate(str){
   if(!str) return '';
   const [y,m,day] = str.split('-');
@@ -585,12 +610,23 @@ function renderGraph(){
 function setToday(){ document.getElementById('date-picker').value=clampDate(todayStr()); renderGraph(); }
 function shiftDate(delta){
   const p=document.getElementById('date-picker');
-  const d=new Date(p.value||todayStr()); d.setDate(d.getDate()+delta);
-  const str=d.toISOString().split('T')[0];
-  p.value=DS[str]?str:(delta<0?'2026-05-01':'2026-05-07');
+  const cur = clampDate(p.value || todayStr());
+  const [y,m,dd] = cur.split('-').map(Number);
+  const d = new Date(y, m - 1, dd);
+  d.setDate(d.getDate() + delta);
+  const str = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const mx = histMaxDate();
+  let next = DS[str] ? str : (delta < 0 ? DS_FIRST : mx);
+  if (next > mx) next = mx;
+  if (next < DS_FIRST) next = DS_FIRST;
+  p.value = next;
   renderGraph();
 }
-function onDateChange(){ renderGraph(); }
+function onDateChange(){
+  const p = document.getElementById('date-picker');
+  p.value = clampDate(p.value);
+  renderGraph();
+}
 
 // ── ZONE SELECTION ────────────────────────────────────────
 function selectZone(idx){
@@ -619,13 +655,17 @@ function refreshAll(){
 
 // ── INIT ──────────────────────────────────────────────────
 (async function(){
-  await fetchLiveWeather();
-  document.getElementById('date-picker').value = clampDate(todayStr());
+  await fetchLiveWeather(true);
+  const dp = document.getElementById('date-picker');
+  dp.min = DS_FIRST;
+  dp.max = histMaxDate();
+  dp.value = clampDate(todayStr());
   document.getElementById('section-zone-label').textContent = `${ZONES[0].icon} ${ZONES[0].name}`;
   refreshAll();
   startCountdown();
-  refreshTimerId = setInterval(()=>{ refreshAll(); startCountdown(); }, refreshIntervalMs);
-  setInterval(()=>{ fetchLiveWeather().then(()=>{ refreshAll(); }); }, 10 * 60 * 1000);
+  refreshTimerId = setInterval(()=>{
+    fetchLiveWeather(false).finally(()=>{ refreshAll(); startCountdown(); });
+  }, refreshIntervalMs);
 })();
 </script>
 </body>
