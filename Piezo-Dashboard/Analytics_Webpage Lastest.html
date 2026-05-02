@@ -310,7 +310,34 @@ function formatDate(str){
   const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${parseInt(day)} ${mn[parseInt(m)-1]} ${y}`;
 }
-function rfDecision(p){ return p>8000?'HIGH':p>4000?'MEDIUM':p>1000?'LOW':'OFF'; }
+const LSTM_WINDOW = 6;
+function levelFromDemand(people){
+  if(people>8000) return 'HIGH';
+  if(people>4000) return 'MEDIUM';
+  if(people>1000) return 'LOW';
+  return 'OFF';
+}
+function lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople){
+  const d=clamp(dateStr), zk=String(zoneIdx);
+  const seq=[];
+  const start=Math.max(0, hourInt-(LSTM_WINDOW-1));
+  for(let hh=start; hh<=hourInt; hh++){
+    const row=DS[d]?.[zk]?.[String(hh)];
+    if(!row) continue;
+    seq.push(hh===hourInt?currentPeople:row.p);
+  }
+  if(!seq.length) return currentPeople;
+  const alpha=0.38;
+  let num=0, den=0;
+  for(let i=0;i<seq.length;i++){ const w=Math.pow(1+alpha,i); num+=seq[i]*w; den+=w; }
+  const weighted=num/den;
+  const peak=Math.max(...seq);
+  const momentum=seq.length>=2?Math.max(0, seq[seq.length-1]-seq[seq.length-2]):0;
+  return weighted*0.72+peak*0.18+momentum*0.1;
+}
+function lstmPredictLevel(zoneIdx, dateStr, hourInt, currentPeople){
+  return levelFromDemand(lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople));
+}
 function levelColor(l){ return l==='HIGH'?'#ff6b35':l==='MEDIUM'?'#f5c518':l==='LOW'?'#18d4f0':'#3a4459'; }
 
 function getHourlyData(zoneIdx, dateStr){
@@ -318,7 +345,7 @@ function getHourlyData(zoneIdx, dateStr){
   if(!zoneDay) return null;
   const hours=Array.from({length:24},(_,h)=>`${String(h).padStart(2,'0')}:00`);
   const normal=hours.map((_,h)=>{ const r=zoneDay[String(h)]; return r?+((r.p*0.0045+8).toFixed(1)):0; });
-  const ai=hours.map((_,h)=>{ const r=zoneDay[String(h)]; if(!r) return 0; const dim=BRIGHT_MAP[rfDecision(r.p)]/100; return +((r.p*0.0045+8)*dim*0.85).toFixed(1); });
+  const ai=hours.map((_,h)=>{ const r=zoneDay[String(h)]; if(!r) return 0; const dim=BRIGHT_MAP[lstmPredictLevel(zoneIdx,d,h,r.p)]/100; return +((r.p*0.0045+8)*dim*0.85).toFixed(1); });
   return {hours,normal,ai};
 }
 
@@ -328,7 +355,7 @@ function getDaySummary(zoneIdx, dateStr){
   let totalNormal=0, totalAI=0, maxPeople=0, weathers=[];
   for(let h=0;h<24;h++){
     const r=zoneDay[String(h)]; if(!r) continue;
-    const n=(r.p*0.0045+8); const ai=n*(BRIGHT_MAP[rfDecision(r.p)]/100)*0.85;
+    const n=(r.p*0.0045+8); const ai=n*(BRIGHT_MAP[lstmPredictLevel(zoneIdx,d,h,r.p)]/100)*0.85;
     totalNormal+=n; totalAI+=ai;
     if(r.p>maxPeople) maxPeople=r.p;
     weathers.push(r.w);
@@ -387,7 +414,7 @@ function renderZoneChips(dateStr){
     const curRow=DS[d]?.[String(i)]?.[curHour];
     const baseP=curRow?curRow.p:0;
     const curPeople=Math.round(baseP*(0.97+Math.random()*0.06));
-    const curLevel=rfDecision(curPeople);
+    const curLevel=lstmPredictLevel(i, d, parseInt(curHour,10), curPeople);
     return `<div class="zone-chip" style="border-color:${z.hex}30;">
       <div class="zone-chip-header">
         <div class="zone-chip-icon">${z.icon}</div>
@@ -537,7 +564,7 @@ function renderEfficiencyTable(dateStr){
     const now=new Date(), curRow=DS[d]?.[String(i)]?.[String(now.getHours())];
     const baseTableP=curRow?.p||0;
     const livePTable=Math.round(baseTableP*(0.97+Math.random()*0.06));
-    const curLevel=rfDecision(livePTable);
+    const curLevel=lstmPredictLevel(i, d, now.getHours(), livePTable);
     const bright=BRIGHT_MAP[curLevel];
     return `<tr>
       <td style="font-weight:600;color:${z.hex}">${z.icon} ${z.name}</td>

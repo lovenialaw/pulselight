@@ -328,19 +328,51 @@ function formatDate(str){
   return `${parseInt(day)} ${mn[parseInt(m)-1]} ${y}`;
 }
 
-// ── RF DECISION (Bukit Bintang scale) ────────────────────
-// People counts are in the thousands, so thresholds are different from random sim
-function rfDecision(people){
-  if (people > 8000)  return 'HIGH';
-  if (people > 4000)  return 'MEDIUM';
-  if (people > 1000)  return 'LOW';
+// ── LSTM-style temporal demand (browser demo) ────────────────────
+// Stand-in for a trained LSTM: recent hours of people (same zone/day) are exponentially weighted,
+// then mapped to HIGH/MEDIUM/LOW/OFF. Swap lstmEffectiveDemand for real inference (API / TF.js) when available.
+const LSTM_WINDOW = 6;
+
+function levelFromDemand(people){
+  if (people > 8000) return 'HIGH';
+  if (people > 4000) return 'MEDIUM';
+  if (people > 1000) return 'LOW';
   return 'OFF';
+}
+
+function lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople){
+  const d = clampDate(dateStr);
+  const zk = String(zoneIdx);
+  const seq = [];
+  const start = Math.max(0, hourInt - (LSTM_WINDOW - 1));
+  for(let hh = start; hh <= hourInt; hh++){
+    const row = DS[d]?.[zk]?.[String(hh)];
+    if(!row) continue;
+    seq.push(hh === hourInt ? currentPeople : row.p);
+  }
+  if(!seq.length) return currentPeople;
+  const alpha = 0.38;
+  let num = 0, den = 0;
+  for(let i = 0; i < seq.length; i++){
+    const w = Math.pow(1 + alpha, i);
+    num += seq[i] * w;
+    den += w;
+  }
+  const weighted = num / den;
+  const peak = Math.max(...seq);
+  const momentum = seq.length >= 2 ? Math.max(0, seq[seq.length - 1] - seq[seq.length - 2]) : 0;
+  return weighted * 0.72 + peak * 0.18 + momentum * 0.1;
+}
+
+function lstmPredictLevel(zoneIdx, dateStr, hourInt, currentPeople){
+  return levelFromDemand(lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople));
 }
 
 // ── GET ZONE DATA from real dataset ──────────────────────
 function getZoneData(zoneIdx){
   const date = clampDate(todayStr());
   const hour = String(new Date().getHours());
+  const hourInt = new Date().getHours();
   const zk   = String(zoneIdx);
   const row  = DS[date]?.[zk]?.[hour];
   if (!row) return null;
@@ -348,7 +380,7 @@ function getZoneData(zoneIdx){
   // Apply ±3% live jitter to people count so each refresh shows updated values
   const jitter = 0.97 + Math.random() * 0.06;
   const livePeople = Math.round(row.p * jitter);
-  const level = rfDecision(livePeople);
+  const level = lstmPredictLevel(zoneIdx, date, hourInt, livePeople);
 
   const weather = liveWeather ? liveWeather.label : row.w;
   const liveTemp = liveWeather
@@ -391,7 +423,7 @@ function getHourlyData(zoneIdx, dateStr){
   const ai = hours.map((_,h) => {
     const row = zoneDay[String(h)];
     if (!row) return 0;
-    const level = rfDecision(row.p);
+    const level = lstmPredictLevel(zoneIdx, d, h, row.p);
     const dimFactor = BRIGHT_MAP[level] / 100;
     return +((row.p * 0.0045 + 8) * dimFactor * 0.85).toFixed(1);
   });
@@ -468,7 +500,7 @@ function renderAIOutput(d){
     <div class="ai-level-badge" style="background:${levelBg(d.level)};color:${levelColor(d.level)};border:1px solid ${levelColor(d.level)}50;">${d.level}</div>
     <div class="ai-label" style="margin-top:4px;">Brightness</div>
     <div class="ai-bright-big" style="color:${levelColor(d.level)}">${d.brightness}<span class="ai-bright-unit">%</span></div>
-    <div class="ai-label">Random Forest Classifier</div>`;
+    <div class="ai-label">LSTM forecaster · temporal window</div>`;
 }
 
 // ── RENDER INPUTS ─────────────────────────────────────────
@@ -512,7 +544,7 @@ function renderSystemStatus(d){
     </div>
     <div class="stat-row">
       <span class="stat-label">AI model</span>
-      <span class="stat-val" style="color:var(--c-accent2)">Random Forest</span>
+      <span class="stat-val" style="color:var(--c-accent2)">LSTM (demo)</span>
     </div>
     <div class="stat-row">
       <span class="stat-label">Temperature</span>
