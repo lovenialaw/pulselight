@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Piezo-AI · Analytics · Bukit Bintang</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --c-bg:      #080a0f; --c-surface: #0e1118; --c-card: #12161f;
+      --c-border:  rgba(255,255,255,0.06); --c-border2: rgba(255,255,255,0.11);
+      --c-text:    #dde3f0; --c-muted:   #5a6478; --c-muted2: #8a96ad;
+      --c-high:    #ff6b35; --c-med:     #f5c518; --c-low:  #18d4f0;
+      --c-off:     #3a4459; --c-green:   #39e07a; --c-accent: #7c6ef5; --c-accent2: #a78bfa;
+      --z0: #a78bfa; --z1: #38bdf8; --z2: #fb923c; --z3: #4ade80;
+      --font: 'Syne', sans-serif; --mono: 'IBM Plex Mono', monospace; --r: 10px;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--c-bg); color: var(--c-text); font-family: var(--font); font-size: 14px; min-height: 100vh; overflow-x: hidden; }
+
+    /* TOP BAR */
+    .topbar { position: sticky; top: 0; z-index: 100; background: rgba(8,10,15,0.94); backdrop-filter: blur(14px); border-bottom: 0.5px solid var(--c-border2); padding: 9px 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .topbar-title { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--c-accent2); }
+    .page-badge { display: flex; align-items: center; gap: 5px; background: rgba(57,224,122,0.08); border: 0.5px solid rgba(57,224,122,0.25); border-radius: 20px; padding: 3px 10px; font-family: var(--mono); font-size: 10px; color: var(--c-green); }
+    .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #clock-display { font-family: var(--mono); font-size: 11px; color: var(--c-muted2); background: var(--c-surface); border: 0.5px solid var(--c-border2); border-radius: 6px; padding: 4px 10px; white-space: nowrap; }
+    .btn { background: transparent; border: 0.5px solid var(--c-border2); color: var(--c-muted2); border-radius: 6px; padding: 5px 12px; font-size: 11px; font-family: var(--mono); cursor: pointer; transition: all 0.18s; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+    .btn:hover { border-color: var(--c-accent); color: var(--c-accent2); }
+    .btn-back { border-color: rgba(167,139,250,0.3); color: var(--c-accent2); background: rgba(124,110,245,0.05); }
+    .btn-back:hover { border-color: var(--c-accent2); background: rgba(124,110,245,0.12); }
+    .interval-group { display: flex; align-items: center; gap: 4px; background: var(--c-surface); border: 0.5px solid var(--c-border2); border-radius: 8px; padding: 3px 4px; }
+    .interval-label { font-family: var(--mono); font-size: 9px; color: var(--c-muted); letter-spacing: 0.08em; text-transform: uppercase; padding: 0 4px 0 2px; }
+    .interval-btn { background: transparent; border: none; color: var(--c-muted2); border-radius: 5px; padding: 3px 9px; font-size: 10px; font-family: var(--mono); cursor: pointer; transition: all 0.15s; }
+    .interval-btn:hover { color: var(--c-text); background: rgba(255,255,255,0.04); }
+    .interval-btn.active { background: rgba(124,110,245,0.18); color: var(--c-accent2); border: 0.5px solid rgba(124,110,245,0.35); }
+    .refresh-countdown { font-family: var(--mono); font-size: 9px; color: var(--c-muted); letter-spacing: 0.06em; white-space: nowrap; }
+    .countdown-bar-wrap { width: 60px; height: 3px; background: rgba(255,255,255,0.06); border-radius: 99px; overflow: hidden; }
+    .countdown-bar { height: 100%; background: var(--c-accent); border-radius: 99px; transition: width 1s linear; }
+
+    /* LAYOUT */
+    .page { padding: 16px 20px 32px; display: flex; flex-direction: column; gap: 12px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+    /* CARDS */
+    .card { background: var(--c-card); border: 0.5px solid var(--c-border); border-radius: var(--r); padding: 14px 16px; animation: fadeUp 0.22s ease; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+    .card-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 12px; }
+
+    /* SECTION HEADERS */
+    .section-title { font-size: 13px; font-weight: 700; color: var(--c-text); display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .section-line { flex: 1; height: 0.5px; background: var(--c-border); }
+    .section-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
+    .section-tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c-muted); }
+
+    /* ZONE SUMMARY CHIPS */
+    .zone-chip { border-radius: var(--r); padding: 12px 14px; border: 0.5px solid var(--c-border2); background: var(--c-surface); }
+    .zone-chip-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .zone-chip-icon { font-size: 20px; }
+    .zone-chip-name { font-size: 12px; font-weight: 700; }
+    .zone-chip-sub  { font-family: var(--mono); font-size: 9px; color: var(--c-muted); }
+    .zone-chip-stat { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 0.5px solid var(--c-border); }
+    .zone-chip-stat:last-child { border-bottom: none; }
+    .zone-chip-key { font-family: var(--mono); font-size: 10px; color: var(--c-muted2); }
+    .zone-chip-val { font-family: var(--mono); font-size: 11px; font-weight: 600; }
+
+    /* DATE CONTROLS */
+    .graph-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .date-input { background: var(--c-surface); border: 0.5px solid var(--c-border2); border-radius: 6px; color: var(--c-text); font-family: var(--mono); font-size: 11px; padding: 5px 10px; cursor: pointer; outline: none; transition: border-color 0.2s; }
+    .date-input:hover, .date-input:focus { border-color: var(--c-accent); }
+    .date-input::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+    .graph-legend { display: flex; gap: 14px; margin-left: auto; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--c-muted2); }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .chart-wrap { position: relative; width: 100%; height: 260px; }
+    .chart-wrap-sm { position: relative; width: 100%; height: 200px; }
+
+    /* ZONE SELECTOR PILL GROUP */
+    .zone-pill-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .zone-pill { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 20px; border: 0.5px solid var(--c-border2); cursor: pointer; transition: all 0.18s; color: var(--c-muted2); background: transparent; }
+    .zone-pill:hover { border-color: var(--c-accent); color: var(--c-accent2); }
+    .zone-pill.active { background: rgba(124,110,245,0.15); border-color: var(--c-accent2); color: var(--c-accent2); }
+
+    /* EFFICIENCY TABLE */
+    .eff-table { width: 100%; border-collapse: collapse; }
+    .eff-table th { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-muted); padding: 6px 10px; text-align: left; border-bottom: 0.5px solid var(--c-border2); }
+    .eff-table td { padding: 9px 10px; border-bottom: 0.5px solid var(--c-border); font-size: 12px; vertical-align: middle; }
+    .eff-table tr:last-child td { border-bottom: none; }
+    .eff-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .eff-bar-wrap { width: 100%; height: 6px; background: var(--c-surface); border-radius: 99px; overflow: hidden; }
+    .eff-bar { height: 100%; border-radius: 99px; }
+    .level-badge { font-family: var(--mono); font-size: 9px; font-weight: 600; padding: 2px 7px; border-radius: 10px; }
+
+    /* METRIC CHIPS ROW */
+    .metric-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+    .metric-chip { background: var(--c-surface); border: 0.5px solid var(--c-border); border-radius: 8px; padding: 12px 14px; }
+    .metric-num { font-size: 28px; font-weight: 700; font-family: var(--mono); line-height: 1.1; }
+    .metric-label { font-size: 11px; color: var(--c-muted); margin-top: 3px; }
+    .metric-sub { font-family: var(--mono); font-size: 10px; color: var(--c-muted); margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-title">📊 Bukit Bintang · Analytics</div>
+    <div class="page-badge">Analytics Page</div>
+  </div>
+  <div class="topbar-right">
+    <div class="interval-group">
+      <span class="interval-label">Refresh</span>
+      <button class="interval-btn" id="aiv-10" onclick="setAnalyticsInterval(10)">10s</button>
+      <button class="interval-btn active" id="aiv-30" onclick="setAnalyticsInterval(30)">30s</button>
+      <button class="interval-btn" id="aiv-60" onclick="setAnalyticsInterval(60)">1m</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span class="refresh-countdown" id="a-countdown-text">next in 30s</span>
+      <div class="countdown-bar-wrap"><div class="countdown-bar" id="a-countdown-bar" style="width:100%"></div></div>
+    </div>
+    <div id="clock-display">--:--:--</div>
+    <a class="btn btn-back" href="Piezo_Dashboard.html">← Dashboard</a>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- ── SECTION 1: ZONE SUMMARY CHIPS ── -->
+  <div>
+    <div class="section-row">
+      <div class="section-tag">Zone overview</div>
+      <div class="section-line"></div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--c-muted);" id="summary-date-label"></div>
+    </div>
+    <div class="grid4" id="zone-chips"></div>
+  </div>
+
+  <!-- ── SECTION 2: KEY METRICS ── -->
+  <div>
+    <div class="section-row">
+      <div class="section-tag">Total system metrics</div>
+      <div class="section-line"></div>
+    </div>
+    <div class="metric-row" id="total-metrics"></div>
+  </div>
+
+  <!-- ── SECTION 3: ALL-ZONES AI COMPARISON GRAPH ── -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div class="card-label" id="allzone-graph-label" style="margin-bottom:0;">All Zones · AI Optimised Energy Comparison (kWh)</div>
+    </div>
+    <div class="graph-controls">
+      <label style="font-family:var(--mono);font-size:10px;color:var(--c-muted);">Date:</label>
+      <input type="date" class="date-input" id="allzone-date" onchange="onAllZoneDateChange()" min="2026-05-01" max="2026-05-07"/>
+      <button class="btn" onclick="setAllZoneToday()">Today</button>
+      <button class="btn" onclick="shiftAllZoneDate(-1)">◀ Prev</button>
+      <button class="btn" onclick="shiftAllZoneDate(1)">Next ▶</button>
+      <div class="graph-legend" id="allzone-legend"></div>
+    </div>
+    <div class="chart-wrap"><canvas id="allZonesChart"></canvas></div>
+  </div>
+
+  <!-- ── SECTION 4: PER-ZONE AI vs NORMAL ── -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div class="card-label" id="zone-graph-label" style="margin-bottom:0;">Per-Zone · AI vs Normal System (kWh)</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+      <div class="zone-pill-group" id="zone-pills"></div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
+        <input type="date" class="date-input" id="zone-date" onchange="onZoneDateChange()" min="2026-05-01" max="2026-05-07"/>
+        <button class="btn" onclick="setZoneToday()">Today</button>
+        <button class="btn" onclick="shiftZoneDate(-1)">◀</button>
+        <button class="btn" onclick="shiftZoneDate(1)">▶</button>
+      </div>
+    </div>
+    <div class="graph-controls" style="margin-bottom:14px;">
+      <div class="graph-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-muted2)"></div>Normal system</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-green)"></div>AI system</div>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="zoneChart"></canvas></div>
+  </div>
+
+  <!-- ── SECTION 5: COMBINED TOTAL ── -->
+  <div class="card">
+    <div class="card-label" id="combined-label">Combined Total · All Zones AI vs Normal (kWh)</div>
+    <div class="graph-controls">
+      <label style="font-family:var(--mono);font-size:10px;color:var(--c-muted);">Date:</label>
+      <input type="date" class="date-input" id="combined-date" onchange="onCombinedDateChange()" min="2026-05-01" max="2026-05-07"/>
+      <button class="btn" onclick="setCombinedToday()">Today</button>
+      <button class="btn" onclick="shiftCombinedDate(-1)">◀ Prev</button>
+      <button class="btn" onclick="shiftCombinedDate(1)">Next ▶</button>
+      <div class="graph-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-muted2)"></div>Normal (all zones total)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-green)"></div>AI (all zones total)</div>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="combinedChart"></canvas></div>
+  </div>
+
+  <!-- ── SECTION 6: ZONE EFFICIENCY TABLE ── -->
+  <div class="card">
+    <div class="card-label" id="table-label">Zone Efficiency Table</div>
+    <table class="eff-table" id="eff-table"></table>
+  </div>
+
+</div><!-- end .page -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  REAL DATASET — Bukit Bintang (May 1–7, 2026)
+// ═══════════════════════════════════════════════════════════
+const DS = {"2026-05-01":{"0":{"0":{"p":2982,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":452,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":434,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":439,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":425,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":2952,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":2970,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":5095,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":7218,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":5167,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":2969,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":2988,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":6379,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":6374,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":3044,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":2974,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":2983,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":5320,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":7654,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":7651,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":3041,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":2991,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":2975,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":2969,"w":"Clear","t":24.9,"d":"Friday"}},"1":{"0":{"p":2103,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":307,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":288,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":300,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":307,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":2053,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":2102,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":3598,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":5101,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":3666,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":2099,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":2110,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":4514,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":4501,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":2140,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":2090,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":2112,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":3753,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":5400,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":5396,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":2160,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":2095,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":2086,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":2101,"w":"Clear","t":24.9,"d":"Friday"}},"2":{"0":{"p":1579,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":230,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":219,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":230,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":228,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":1558,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":1572,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":2698,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":3812,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":2731,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":1573,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":1583,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":3378,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":3371,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":1598,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":1570,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":1577,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":2808,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":3818,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":3823,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":3825,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":3825,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":3815,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":2739,"w":"Clear","t":24.9,"d":"Friday"}},"3":{"0":{"p":1228,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":185,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":181,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":180,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":175,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":1208,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":1221,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":2098,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":2976,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":2130,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":1219,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":1224,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":2625,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":2621,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":1243,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":1218,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":1219,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":2187,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":3149,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":3154,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":1256,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":1229,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":1224,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":1226,"w":"Clear","t":24.9,"d":"Friday"}}},"2026-05-02":{"0":{"0":{"p":3400,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":851,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":867,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":830,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":843,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":850,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":3360,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":3394,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":3393,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":3404,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":3397,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":7655,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":7657,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":7650,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":7658,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":7657,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":7650,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":7651,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":16125,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":16154,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":16108,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":16143,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":16172,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":15077,"w":"Clear","t":24.9,"d":"Saturday"}},"1":{"0":{"p":2403,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":597,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":600,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":584,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":600,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":601,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":2377,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":2416,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":2386,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":2393,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":2407,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":5396,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":5393,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":5399,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":5395,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":5398,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":5394,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":5398,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":8850,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":8851,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":8837,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":8863,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":8869,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":8328,"w":"Clear","t":24.9,"d":"Saturday"}},"2":{"0":{"p":1798,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":449,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":446,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":447,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":446,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":440,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":1773,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":1802,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":1802,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":1810,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":1803,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":4047,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":4048,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":4042,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":4043,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":4053,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":4045,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":4041,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":4499,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":4501,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":4499,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":4500,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":4499,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":3182,"w":"Clear","t":24.9,"d":"Saturday"}},"3":{"0":{"p":1400,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":351,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":350,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":351,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":348,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":354,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":1375,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":1398,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":1400,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":1398,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":1396,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":3152,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":3150,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":3151,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":3149,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":3151,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":3154,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":3157,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":4374,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":4374,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":4370,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":4367,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":4381,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":4135,"w":"Clear","t":24.9,"d":"Saturday"}}},"2026-05-03":{"0":{"0":{"p":3411,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":853,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":846,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":871,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":856,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":838,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":3355,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":3378,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":3408,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":3409,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":3406,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":7646,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":7640,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":7646,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":7654,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":7666,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":7654,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":7657,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":7649,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":7638,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":7641,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":3481,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":3398,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":3387,"w":"Clear","t":24.9,"d":"Sunday"}},"1":{"0":{"p":2398,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":597,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":588,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":602,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":594,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":603,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":2367,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":2395,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":2399,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":2397,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":2393,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":5401,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":5404,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":5391,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":5399,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":5391,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":5407,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":5404,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":5411,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":5405,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":5408,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":2453,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":2400,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":2419,"w":"Clear","t":24.9,"d":"Sunday"}},"2":{"0":{"p":1795,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":450,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":456,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":444,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":449,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":452,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":1776,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":1796,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":1797,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":1804,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":1798,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":4045,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":4050,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":4048,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":4057,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":4050,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":4051,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":4046,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":4504,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":4497,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":4501,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":4494,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":4492,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":3194,"w":"Clear","t":24.9,"d":"Sunday"}},"3":{"0":{"p":1404,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":350,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":341,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":348,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":343,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":344,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":1388,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":1399,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":1393,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":1398,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":1403,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":3154,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":3159,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":3143,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":3152,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":3150,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":3149,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":3150,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":3148,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":3147,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":3147,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":1429,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":1398,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":1399,"w":"Clear","t":24.9,"d":"Sunday"}}},"2026-05-04":{"0":{"0":{"p":2978,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":437,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":438,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":412,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":423,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":2942,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":2977,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":5120,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":7228,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":5154,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":2968,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":2959,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":6373,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":6368,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":3033,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":2957,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":2970,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":5311,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":7642,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":7644,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":3068,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":2966,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":2980,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":2969,"w":"Clear","t":24.9,"d":"Monday"}},"1":{"0":{"p":2098,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":299,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":305,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":300,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":300,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":2071,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":2095,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":3600,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":5091,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":3653,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":2102,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":2106,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":4506,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":4486,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":2134,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":2105,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":2095,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":3753,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":5402,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":5387,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":2157,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":2101,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":2098,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":2092,"w":"Clear","t":24.9,"d":"Monday"}},"2":{"0":{"p":1573,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":231,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":232,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":227,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":228,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":1550,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":1575,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":2697,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":3823,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":2745,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":1575,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":1567,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":3388,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":3362,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":1603,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":1578,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":1576,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":2811,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":3824,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":3820,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":3829,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":3823,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":3829,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":2729,"w":"Clear","t":24.9,"d":"Monday"}},"3":{"0":{"p":1221,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":178,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":179,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":174,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":182,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":1210,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":1224,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":2101,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":2975,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":2127,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":1231,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":1225,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":2627,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":2627,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":1253,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":1224,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":1225,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":2181,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":3144,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":3156,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":1256,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":1219,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":1223,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":1220,"w":"Clear","t":24.9,"d":"Monday"}}},"2026-05-05":{"0":{"0":{"p":2994,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":432,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":442,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":439,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":431,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":2930,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":2982,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":5090,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":7239,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":5180,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":2977,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":3000,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":6365,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":6391,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":3031,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":2966,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":2988,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":5314,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":7648,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":7644,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":3034,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":2978,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":2978,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":2986,"w":"Clear","t":24.9,"d":"Tuesday"}},"1":{"0":{"p":2085,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":307,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":304,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":307,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":302,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":2070,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":2092,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":3598,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":5123,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":3651,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":2106,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":2094,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":4505,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":4501,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":2154,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":2095,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":2090,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":3750,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":5401,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":5397,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":2154,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":2103,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":2104,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":2101,"w":"Clear","t":24.9,"d":"Tuesday"}},"2":{"0":{"p":1565,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":239,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":231,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":235,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":234,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":1558,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":1581,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":2699,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":3821,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":2738,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":1575,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":1568,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":3371,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":3368,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":1614,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":1578,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":1565,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":2814,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":3830,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":3827,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":3823,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":3821,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":3812,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":2742,"w":"Clear","t":24.9,"d":"Tuesday"}},"3":{"0":{"p":1221,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":180,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":176,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":170,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":184,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":1208,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":1225,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":2099,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":2973,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":2129,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":1224,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":1227,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":2621,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":2625,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":1253,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":1226,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":1224,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":2182,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":3154,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":3151,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":1255,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":1221,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":1224,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":1223,"w":"Clear","t":24.9,"d":"Tuesday"}}},"2026-05-06":{"0":{"0":{"p":2985,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":428,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":420,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":430,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":430,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":2936,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":2989,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":5111,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":7222,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":5156,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":2979,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":2978,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":6398,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":6383,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":3027,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":2968,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":2971,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":5302,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":7651,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":7641,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":3041,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":2993,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":2980,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":2989,"w":"Clear","t":24.9,"d":"Wednesday"}},"1":{"0":{"p":2102,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":300,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":304,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":305,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":304,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":2095,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":2100,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":3593,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":5103,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":3653,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":2098,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":2101,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":4499,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":4495,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":2145,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":2104,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":2078,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":3750,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":5406,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":5403,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":2153,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":2100,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":2110,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":2102,"w":"Clear","t":24.9,"d":"Wednesday"}},"2":{"0":{"p":1576,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":235,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":231,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":234,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":226,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":1556,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":1584,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":2701,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":3828,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":2743,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":1575,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":1578,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":3371,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":3369,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":1606,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":1567,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":1568,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":2811,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":3821,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":3826,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":3829,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":3828,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":3823,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":2738,"w":"Clear","t":24.9,"d":"Wednesday"}},"3":{"0":{"p":1225,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":183,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":181,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":179,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":182,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":1209,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":1225,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":2098,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":2976,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":2122,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":1221,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":1222,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":2614,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":2623,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":1248,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":1226,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":1217,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":2189,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":3146,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":3146,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":1255,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":1223,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":1222,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":1225,"w":"Clear","t":24.9,"d":"Wednesday"}}},"2026-05-07":{"0":{"0":{"p":2983,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":423,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":432,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":429,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":422,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":2909,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":2998,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":5101,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":7226,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":5187,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":2963,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":2975,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":6385,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":6381,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":3032,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":2964,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":2973,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":5317,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":7657,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":7645,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":3050,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":2982,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":2979,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":2971,"w":"Clear","t":24.9,"d":"Thursday"}},"1":{"0":{"p":2103,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":300,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":303,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":298,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":317,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":2074,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":2112,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":3596,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":5099,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":3646,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":2097,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":2095,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":4499,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":4484,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":2128,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":2101,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":2099,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":3743,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":5397,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":5399,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":2153,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":2101,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":2101,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":2090,"w":"Clear","t":24.9,"d":"Thursday"}},"2":{"0":{"p":1575,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":222,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":220,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":224,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":237,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":1546,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":1566,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":2702,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":3816,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":2735,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":1577,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":1576,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":3371,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":3378,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":1608,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":1579,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":1583,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":2812,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":3822,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":3834,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":3828,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":3830,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":3831,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":2735,"w":"Clear","t":24.9,"d":"Thursday"}},"3":{"0":{"p":1225,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":187,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":170,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":175,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":179,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":1202,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":1227,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":2099,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":2974,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":2138,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":1225,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":1229,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":2629,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":2622,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":1251,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":1225,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":1225,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":2186,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":3155,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":3140,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":1253,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":1220,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":1221,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":1218,"w":"Clear","t":24.9,"d":"Thursday"}}}};
+
+// ═══════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════
+const ZONES = [
+  { id:'0', short:'Zone A', name:'Pavilion KL Crossing',  icon:'🏛️', color:'rgba(167,139,250,', hex:'#a78bfa' },
+  { id:'1', short:'Zone B', name:'Lot 10 / MRT Entrance', icon:'🚇', color:'rgba(56,189,248,',  hex:'#38bdf8' },
+  { id:'2', short:'Zone C', name:'Jalan Alor Entrance',   icon:'🌃', color:'rgba(251,146,60,',  hex:'#fb923c' },
+  { id:'3', short:'Zone D', name:'Fahrenheit88 Walkway',  icon:'🏢', color:'rgba(74,222,128,',  hex:'#4ade80' },
+];
+const BRIGHT_MAP = {HIGH:100,MEDIUM:60,LOW:20,OFF:0};
+const WEATHER_ICONS = {Clear:'☀️',Cloudy:'☁️',Rain:'🌧️',Drizzle:'🌦️',Thunderstorm:'⛈️'};
+const ZONE_COLORS = ['#a78bfa','#38bdf8','#fb923c','#4ade80'];
+
+let allZonesChart = null, zoneChart = null, combinedChart = null;
+let selectedZonePill = 0;
+
+// ── HELPERS ──────────────────────────────────────────────
+function todayStr(){ return new Date().toISOString().split('T')[0]; }
+function clamp(str){ return DS[str] ? str : '2026-05-01'; }
+function formatDate(str){
+  if(!str) return '';
+  const [y,m,day]=str.split('-');
+  const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parseInt(day)} ${mn[parseInt(m)-1]} ${y}`;
+}
+function rfDecision(p){ return p>8000?'HIGH':p>4000?'MEDIUM':p>1000?'LOW':'OFF'; }
+function levelColor(l){ return l==='HIGH'?'#ff6b35':l==='MEDIUM'?'#f5c518':l==='LOW'?'#18d4f0':'#3a4459'; }
+
+function getHourlyData(zoneIdx, dateStr){
+  const d=clamp(dateStr), zk=String(zoneIdx), zoneDay=DS[d]?.[zk];
+  if(!zoneDay) return null;
+  const hours=Array.from({length:24},(_,h)=>`${String(h).padStart(2,'0')}:00`);
+  const normal=hours.map((_,h)=>{ const r=zoneDay[String(h)]; return r?+((r.p*0.0045+8).toFixed(1)):0; });
+  const ai=hours.map((_,h)=>{ const r=zoneDay[String(h)]; if(!r) return 0; const dim=BRIGHT_MAP[rfDecision(r.p)]/100; return +((r.p*0.0045+8)*dim*0.85).toFixed(1); });
+  return {hours,normal,ai};
+}
+
+function getDaySummary(zoneIdx, dateStr){
+  const d=clamp(dateStr), zk=String(zoneIdx), zoneDay=DS[d]?.[zk];
+  if(!zoneDay) return null;
+  let totalNormal=0, totalAI=0, maxPeople=0, weathers=[];
+  for(let h=0;h<24;h++){
+    const r=zoneDay[String(h)]; if(!r) continue;
+    const n=(r.p*0.0045+8); const ai=n*(BRIGHT_MAP[rfDecision(r.p)]/100)*0.85;
+    totalNormal+=n; totalAI+=ai;
+    if(r.p>maxPeople) maxPeople=r.p;
+    weathers.push(r.w);
+  }
+  const saved=((totalNormal-totalAI)/totalNormal*100).toFixed(1);
+  const topWeather = [...weathers].sort((a,b)=>weathers.filter(v=>v===b).length-weathers.filter(v=>v===a).length)[0];
+  return { totalNormal:totalNormal.toFixed(1), totalAI:totalAI.toFixed(1), saved, maxPeople, weather:topWeather, day:zoneDay['0']?.d||'' };
+}
+
+// ── CLOCK ─────────────────────────────────────────────────
+function updateClock(){
+  const now=new Date();
+  const h=String(now.getHours()).padStart(2,'0'), m=String(now.getMinutes()).padStart(2,'0'), s=String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('clock-display').textContent=`${now.toLocaleDateString('en-MY',{day:'numeric',month:'short',year:'numeric'})}  ${h}:${m}:${s}`;
+}
+setInterval(updateClock,1000); updateClock();
+
+// ── CHART HELPERS ─────────────────────────────────────────
+const CHART_OPTS = (title) => ({
+  responsive:true, maintainAspectRatio:false,
+  interaction:{mode:'index',intersect:false},
+  plugins:{
+    legend:{display:false},
+    tooltip:{
+      backgroundColor:'rgba(14,17,24,0.94)', borderColor:'rgba(255,255,255,0.1)', borderWidth:0.5,
+      titleColor:'#8a96ad', bodyColor:'#dde3f0',
+      titleFont:{family:"'IBM Plex Mono',monospace",size:10}, bodyFont:{family:"'IBM Plex Mono',monospace",size:11}, padding:10,
+    }
+  },
+  scales:{
+    x:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:9},maxRotation:0,maxTicksLimit:12},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'}},
+    y:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:9}},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'},title:{display:true,text:'kWh',color:'#5a6478',font:{size:9}}}
+  }
+});
+
+// ── RENDER ZONE CHIPS ─────────────────────────────────────
+function renderZoneChips(dateStr){
+  const d = clamp(dateStr);
+  document.getElementById('summary-date-label').textContent = formatDate(d) + ' · ' + (DS[d]?.['0']?.['8']?.d||'');
+  document.getElementById('zone-chips').innerHTML = ZONES.map((z,i)=>{
+    const s=getDaySummary(i,d);
+    if(!s) return '';
+    const now=new Date(), curHour=String(now.getHours());
+    const curRow=DS[d]?.[String(i)]?.[curHour];
+    const baseP=curRow?curRow.p:0;
+    const curPeople=Math.round(baseP*(0.97+Math.random()*0.06));
+    const curLevel=rfDecision(curPeople);
+    return `<div class="zone-chip" style="border-color:${z.hex}30;">
+      <div class="zone-chip-header">
+        <div class="zone-chip-icon">${z.icon}</div>
+        <div>
+          <div class="zone-chip-name" style="color:${z.hex}">${z.name}</div>
+          <div class="zone-chip-sub">${z.short} · ${z.line||'MRT Kajang Line'}</div>
+        </div>
+      </div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Current level</span><span class="zone-chip-val"><span class="level-badge" style="background:${levelColor(curLevel)}22;color:${levelColor(curLevel)};border:0.5px solid ${levelColor(curLevel)}55;">${curLevel}</span></span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Peak people</span><span class="zone-chip-val" style="color:${z.hex}">${s.maxPeople.toLocaleString()}</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Energy saved</span><span class="zone-chip-val" style="color:#39e07a">${s.saved}%</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">AI total</span><span class="zone-chip-val">${s.totalAI} kWh</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Normal total</span><span class="zone-chip-val">${s.totalNormal} kWh</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Weather</span><span class="zone-chip-val">${WEATHER_ICONS[s.weather]||''} ${s.weather}</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ── RENDER TOTAL METRICS ──────────────────────────────────
+function renderTotalMetrics(dateStr){
+  const d=clamp(dateStr);
+  let totNorm=0,totAI=0,totPeak=0;
+  for(let z=0;z<4;z++){
+    const s=getDaySummary(z,d);
+    if(!s) continue;
+    totNorm+=parseFloat(s.totalNormal);
+    totAI+=parseFloat(s.totalAI);
+    totPeak+=s.maxPeople;
+  }
+  const saved=((totNorm-totAI)/totNorm*100).toFixed(1);
+  document.getElementById('total-metrics').innerHTML=`
+    <div class="metric-chip"><div class="metric-num" style="color:#39e07a">${saved}%</div><div class="metric-label">Total energy saved</div><div class="metric-sub">AI vs normal across all zones</div></div>
+    <div class="metric-chip"><div class="metric-num" style="color:#a78bfa">${totAI.toFixed(1)}</div><div class="metric-label">AI total (kWh)</div><div class="metric-sub">All 4 zones combined</div></div>
+    <div class="metric-chip"><div class="metric-num" style="color:#8a96ad">${totNorm.toFixed(1)}</div><div class="metric-label">Normal total (kWh)</div><div class="metric-sub">Without AI optimisation</div></div>
+    <div class="metric-chip"><div class="metric-num" style="color:#f5c518">${totPeak.toLocaleString()}</div><div class="metric-label">Combined peak people</div><div class="metric-sub">Across all zones · ${formatDate(d)}</div></div>`;
+}
+
+// ── ALL-ZONES COMPARISON GRAPH ────────────────────────────
+function renderAllZonesGraph(){
+  const dateStr=document.getElementById('allzone-date').value;
+  const d=clamp(dateStr);
+  document.getElementById('allzone-graph-label').textContent=`All Zones · AI Optimised Energy Comparison (kWh) · ${formatDate(d)}`;
+  const hours=Array.from({length:24},(_,h)=>`${String(h).padStart(2,'00')}:00`.replace(/^(\d):/, '0$1:'));
+  const datasets=ZONES.map((z,i)=>{
+    const data=getHourlyData(i,d);
+    return {
+      label:z.name, data:data?data.ai:[],
+      borderColor:z.color+'0.9)', backgroundColor:z.color+'0.07)',
+      borderWidth:2, pointRadius:2, pointHoverRadius:6, tension:0.4, fill:false
+    };
+  });
+
+  document.getElementById('allzone-legend').innerHTML=ZONES.map((z,i)=>`
+    <div class="legend-item"><div class="legend-dot" style="background:${z.hex}"></div>${z.name}</div>`).join('');
+
+  const ctx=document.getElementById('allZonesChart').getContext('2d');
+  if(allZonesChart) allZonesChart.destroy();
+  const opts=CHART_OPTS();
+  opts.plugins.tooltip.callbacks={
+    title:items=>`${items[0].label.padEnd(5)} — ${formatDate(d)}`,
+    label:item=>` ${item.dataset.label}: ${item.parsed.y} kWh`,
+    afterBody:items=>{ const total=items.reduce((s,i)=>s+i.parsed.y,0).toFixed(1); return ['',` Total AI: ${total} kWh`]; }
+  };
+  allZonesChart=new Chart(ctx,{type:'line',data:{labels:hours,datasets},options:opts});
+}
+
+// ── PER-ZONE GRAPH ────────────────────────────────────────
+function renderZonePills(){
+  document.getElementById('zone-pills').innerHTML=ZONES.map((z,i)=>`
+    <button class="zone-pill ${i===selectedZonePill?'active':''}" onclick="selectZonePill(${i})">${z.icon} ${z.name}</button>`).join('');
+}
+function selectZonePill(i){
+  selectedZonePill=i;
+  renderZonePills();
+  renderZoneGraph();
+}
+function renderZoneGraph(){
+  const dateStr=document.getElementById('zone-date').value;
+  const d=clamp(dateStr);
+  const zone=ZONES[selectedZonePill];
+  document.getElementById('zone-graph-label').textContent=`${zone.icon} ${zone.name} · AI vs Normal (kWh) · ${formatDate(d)}`;
+  const data=getHourlyData(selectedZonePill,d);
+  const ctx=document.getElementById('zoneChart').getContext('2d');
+  if(zoneChart) zoneChart.destroy();
+  if(!data) return;
+  const opts=CHART_OPTS();
+  opts.plugins.tooltip.callbacks={
+    title:items=>`${items[0].label}  —  ${zone.name}`,
+    label:item=>` ${item.dataset.label}: ${item.parsed.y} kWh`,
+    afterBody:items=>{
+      if(items.length<2) return [];
+      const s=((items[0].parsed.y-items[1].parsed.y)/Math.max(0.01,items[0].parsed.y)*100).toFixed(0);
+      return ['',` AI saves ${s}% this hour`];
+    }
+  };
+  zoneChart=new Chart(ctx,{type:'line',data:{
+    labels:data.hours,
+    datasets:[
+      {label:'Normal system',data:data.normal,borderColor:'rgba(138,150,173,0.7)',backgroundColor:'rgba(138,150,173,0.06)',borderWidth:1.5,pointRadius:2,pointHoverRadius:5,tension:0.4,fill:true},
+      {label:'AI system',    data:data.ai,    borderColor:zone.color+'0.9)',     backgroundColor:zone.color+'0.07)',     borderWidth:2,  pointRadius:2,pointHoverRadius:5,tension:0.4,fill:true}
+    ]
+  },options:opts});
+}
+
+// ── COMBINED TOTAL GRAPH ──────────────────────────────────
+function renderCombinedGraph(){
+  const dateStr=document.getElementById('combined-date').value;
+  const d=clamp(dateStr);
+  document.getElementById('combined-label').textContent=`Combined Total · All Zones AI vs Normal (kWh) · ${formatDate(d)}`;
+  const hours=Array.from({length:24},(_,h)=>`${String(h).padStart(2,'0')}:00`);
+  const normalSum=new Array(24).fill(0), aiSum=new Array(24).fill(0);
+  for(let z=0;z<4;z++){
+    const data=getHourlyData(z,d);
+    if(!data) continue;
+    data.normal.forEach((v,h)=>normalSum[h]+=v);
+    data.ai.forEach((v,h)=>aiSum[h]+=v);
+  }
+  const ctx=document.getElementById('combinedChart').getContext('2d');
+  if(combinedChart) combinedChart.destroy();
+  const opts=CHART_OPTS();
+  opts.plugins.tooltip.callbacks={
+    title:items=>`${items[0].label} — All zones combined`,
+    label:item=>` ${item.dataset.label}: ${item.parsed.y.toFixed(1)} kWh`,
+    afterBody:items=>{
+      if(items.length<2) return [];
+      const s=((items[0].parsed.y-items[1].parsed.y)/Math.max(0.01,items[0].parsed.y)*100).toFixed(0);
+      return ['',` AI saves ${s}% at this hour`];
+    }
+  };
+  combinedChart=new Chart(ctx,{type:'line',data:{
+    labels:hours,
+    datasets:[
+      {label:'Normal system',data:normalSum.map(v=>+v.toFixed(1)),borderColor:'rgba(138,150,173,0.7)',backgroundColor:'rgba(138,150,173,0.06)',borderWidth:1.5,pointRadius:2,pointHoverRadius:4,tension:0.4,fill:true},
+      {label:'AI system',    data:aiSum.map(v=>+v.toFixed(1)),    borderColor:'rgba(57,224,122,0.85)', backgroundColor:'rgba(57,224,122,0.07)', borderWidth:2,  pointRadius:2,pointHoverRadius:4,tension:0.4,fill:true}
+    ]
+  },options:opts});
+}
+
+// ── EFFICIENCY TABLE ──────────────────────────────────────
+function renderEfficiencyTable(dateStr){
+  const d=clamp(dateStr);
+  document.getElementById('table-label').textContent=`Zone Efficiency Table · ${formatDate(d)}`;
+  const rows=ZONES.map((z,i)=>{
+    const s=getDaySummary(i,d);
+    if(!s) return '';
+    const savePct=parseFloat(s.saved);
+    const now=new Date(), curRow=DS[d]?.[String(i)]?.[String(now.getHours())];
+    const baseTableP=curRow?.p||0;
+    const livePTable=Math.round(baseTableP*(0.97+Math.random()*0.06));
+    const curLevel=rfDecision(livePTable);
+    const bright=BRIGHT_MAP[curLevel];
+    return `<tr>
+      <td style="font-weight:600;color:${z.hex}">${z.icon} ${z.name}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${livePTable.toLocaleString()}</td>
+      <td><span class="level-badge" style="background:${levelColor(curLevel)}22;color:${levelColor(curLevel)};border:0.5px solid ${levelColor(curLevel)}55;">${curLevel}</span></td>
+      <td style="font-family:var(--mono);font-size:11px;">${bright}%</td>
+      <td style="min-width:120px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="eff-bar-wrap" style="flex:1"><div class="eff-bar" style="width:${savePct}%;background:${z.hex}"></div></div>
+          <span style="font-family:var(--mono);font-size:11px;color:${z.hex};min-width:36px;">${savePct}%</span>
+        </div>
+      </td>
+      <td style="font-family:var(--mono);font-size:11px;color:#39e07a">${s.totalAI}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--c-muted2)">${s.totalNormal}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('eff-table').innerHTML=`
+    <thead><tr>
+      <th>Location</th><th>People (now)</th><th>AI Level</th><th>Brightness</th><th>Energy Saved</th><th>AI kWh/day</th><th>Normal kWh/day</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>`;
+}
+
+// ── DATE CONTROLS ─────────────────────────────────────────
+function shiftDate(inputId, delta){
+  const p=document.getElementById(inputId);
+  const d=new Date(p.value||todayStr()); d.setDate(d.getDate()+delta);
+  const str=d.toISOString().split('T')[0];
+  p.value=DS[str]?str:(delta<0?'2026-05-01':'2026-05-07');
+}
+
+function setAllZoneToday(){ document.getElementById('allzone-date').value=clamp(todayStr()); onAllZoneDateChange(); }
+function shiftAllZoneDate(delta){ shiftDate('allzone-date',delta); renderAllZonesGraph(); }
+function onAllZoneDateChange(){ renderAllZonesGraph(); }
+
+function setZoneToday(){ document.getElementById('zone-date').value=clamp(todayStr()); renderZoneGraph(); }
+function shiftZoneDate(delta){ shiftDate('zone-date',delta); renderZoneGraph(); }
+function onZoneDateChange(){ renderZoneGraph(); }
+
+function setCombinedToday(){ document.getElementById('combined-date').value=clamp(todayStr()); renderCombinedGraph(); }
+function shiftCombinedDate(delta){ shiftDate('combined-date',delta); renderCombinedGraph(); }
+function onCombinedDateChange(){ renderCombinedGraph(); }
+
+// ── INIT ──────────────────────────────────────────────────
+const init=clamp(todayStr());
+document.getElementById('allzone-date').value=init;
+document.getElementById('zone-date').value=init;
+document.getElementById('combined-date').value=init;
+
+renderZoneChips(init);
+renderTotalMetrics(init);
+renderZonePills();
+renderAllZonesGraph();
+renderZoneGraph();
+renderCombinedGraph();
+renderEfficiencyTable(init);
+
+// ── ANALYTICS REFRESH INTERVAL ────────────────────────────
+let aRefreshMs = 30000;
+let aRefreshTimer = null;
+let aCountdownTimer = null;
+
+function refreshAnalyticsPanels(){
+  const d = clamp(document.getElementById('allzone-date').value);
+  renderZoneChips(d);
+  renderTotalMetrics(d);
+  renderEfficiencyTable(d);
+}
+
+function startAnalyticsCountdown(){
+  const total = aRefreshMs / 1000;
+  let remaining = total;
+  const bar  = document.getElementById('a-countdown-bar');
+  const text = document.getElementById('a-countdown-text');
+  clearInterval(aCountdownTimer);
+  function tick(){ remaining=Math.max(0,remaining-1); bar.style.width=(remaining/total*100)+'%'; text.textContent=`next in ${remaining}s`; }
+  tick();
+  aCountdownTimer = setInterval(tick, 1000);
+}
+
+function setAnalyticsInterval(secs){
+  ['10','30','60'].forEach(s => {
+    const el = document.getElementById('aiv-'+s);
+    if(el) el.classList.toggle('active', parseInt(s)===secs);
+  });
+  aRefreshMs = secs * 1000;
+  clearInterval(aRefreshTimer);
+  clearInterval(aCountdownTimer);
+  startAnalyticsCountdown();
+  aRefreshTimer = setInterval(()=>{ refreshAnalyticsPanels(); startAnalyticsCountdown(); }, aRefreshMs);
+}
+
+// Start with 30s interval
+setAnalyticsInterval(30);
+</script>
+</body>
+</html>

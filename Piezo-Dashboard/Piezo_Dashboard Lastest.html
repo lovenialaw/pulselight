@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Piezo-AI · Bukit Bintang Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --c-bg:      #080a0f; --c-surface: #0e1118; --c-card: #12161f;
+      --c-border:  rgba(255,255,255,0.06); --c-border2: rgba(255,255,255,0.11);
+      --c-text:    #dde3f0; --c-muted:   #5a6478; --c-muted2: #8a96ad;
+      --c-high:    #ff6b35; --c-med:     #f5c518; --c-low:  #18d4f0;
+      --c-off:     #3a4459; --c-green:   #39e07a; --c-accent: #7c6ef5; --c-accent2: #a78bfa;
+      --font: 'Syne', sans-serif; --mono: 'IBM Plex Mono', monospace; --r: 10px;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--c-bg); color: var(--c-text); font-family: var(--font); font-size: 14px; min-height: 100vh; overflow-x: hidden; }
+
+    /* TOP BAR */
+    .topbar { position: sticky; top: 0; z-index: 100; background: rgba(8,10,15,0.94); backdrop-filter: blur(14px); border-bottom: 0.5px solid var(--c-border2); padding: 9px 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .topbar-title { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--c-accent2); }
+    .live-pill { display: flex; align-items: center; gap: 5px; background: rgba(57,224,122,0.08); border: 0.5px solid rgba(57,224,122,0.2); border-radius: 20px; padding: 3px 8px; font-family: var(--mono); font-size: 10px; color: var(--c-green); }
+    .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-green); animation: blink 1.8s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #clock-display { font-family: var(--mono); font-size: 11px; color: var(--c-muted2); background: var(--c-surface); border: 0.5px solid var(--c-border2); border-radius: 6px; padding: 4px 10px; letter-spacing: 0.04em; white-space: nowrap; }
+
+    .btn { background: transparent; border: 0.5px solid var(--c-border2); color: var(--c-muted2); border-radius: 6px; padding: 5px 12px; font-size: 11px; font-family: var(--mono); cursor: pointer; transition: all 0.18s; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+    .btn:hover { border-color: var(--c-accent); color: var(--c-accent2); }
+    .btn-analytics { border-color: rgba(57,224,122,0.3); color: var(--c-green); background: rgba(57,224,122,0.05); }
+    .btn-analytics:hover { border-color: var(--c-green); background: rgba(57,224,122,0.1); }
+
+    .interval-group { display: flex; align-items: center; gap: 4px; background: var(--c-surface); border: 0.5px solid var(--c-border2); border-radius: 8px; padding: 3px 4px; }
+    .interval-label { font-family: var(--mono); font-size: 9px; color: var(--c-muted); letter-spacing: 0.08em; text-transform: uppercase; padding: 0 4px 0 2px; }
+    .interval-btn { background: transparent; border: none; color: var(--c-muted2); border-radius: 5px; padding: 3px 9px; font-size: 10px; font-family: var(--mono); cursor: pointer; transition: all 0.15s; }
+    .interval-btn:hover { color: var(--c-text); background: rgba(255,255,255,0.04); }
+    .interval-btn.active { background: rgba(124,110,245,0.18); color: var(--c-accent2); border: 0.5px solid rgba(124,110,245,0.35); }
+    .refresh-countdown { font-family: var(--mono); font-size: 9px; color: var(--c-muted); letter-spacing: 0.06em; white-space: nowrap; }
+    .countdown-bar-wrap { width: 60px; height: 3px; background: rgba(255,255,255,0.06); border-radius: 99px; overflow: hidden; }
+    .countdown-bar { height: 100%; background: var(--c-accent); border-radius: 99px; transition: width 1s linear; }
+
+    /* ZONE TABS */
+    .zone-map-wrap { padding: 14px 20px 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .zone-map-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c-muted); flex-shrink: 0; }
+    .zone-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .zone-tab { cursor: pointer; border-radius: 8px; padding: 10px 16px; border: 0.5px solid var(--c-border2); background: var(--c-card); transition: all 0.22s; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 130px; }
+    .zone-tab:hover { border-color: var(--c-accent); transform: translateY(-1px); }
+    .zone-tab.selected { border-color: var(--c-accent2); background: rgba(124,110,245,0.1); box-shadow: 0 0 16px rgba(124,110,245,0.15); }
+    .zone-tab-name { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--c-text); text-align: center; }
+    .zone-tab-sub { font-family: var(--mono); font-size: 9px; color: var(--c-muted); text-align: center; }
+    .zone-tab-level { font-family: var(--mono); font-size: 9px; font-weight: 500; padding: 2px 6px; border-radius: 10px; letter-spacing: 0.07em; }
+    .zone-tab-bright { font-family: var(--mono); font-size: 10px; color: var(--c-muted2); }
+    .zone-icon { font-size: 20px; line-height: 1; }
+
+    /* MAIN GRID */
+    .main { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 14px 20px 24px; }
+    .card { background: var(--c-card); border: 0.5px solid var(--c-border); border-radius: var(--r); padding: 14px 16px; animation: fadeUp 0.25s ease; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    .card-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 12px; }
+    .col2 { grid-column: span 2; } .col3 { grid-column: 1/-1; }
+    .section-hdr { grid-column: 1/-1; display: flex; align-items: center; gap: 10px; padding: 4px 0 2px; }
+    .section-hdr-text { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--c-muted); }
+    .section-hdr-zone { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 12px; font-family: var(--mono); background: rgba(124,110,245,0.12); color: var(--c-accent2); border: 0.5px solid rgba(124,110,245,0.3); }
+    .section-line { flex: 1; height: 0.5px; background: var(--c-border); }
+
+    /* INPUTS */
+    .inputs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .input-row { background: var(--c-surface); border-radius: 7px; padding: 10px 12px; border: 0.5px solid var(--c-border); }
+    .input-key { font-family: var(--mono); font-size: 10px; color: var(--c-muted); margin-bottom: 5px; }
+    .input-icon { font-size: 20px; margin-bottom: 4px; }
+    .input-val { font-size: 18px; font-weight: 700; font-family: var(--mono); color: var(--c-text); display: flex; align-items: baseline; gap: 4px; }
+    .input-val small { font-size: 10px; color: var(--c-muted); font-weight: 400; }
+    .input-sim-tag { font-family: var(--mono); font-size: 9px; color: var(--c-med); border: 0.5px solid rgba(245,197,24,0.3); background: rgba(245,197,24,0.06); border-radius: 4px; padding: 1px 5px; margin-top: 4px; display: inline-block; }
+
+    /* AI OUTPUT */
+    .ai-output-big { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; }
+    .ai-level-badge { font-size: 26px; font-weight: 800; letter-spacing: 0.06em; padding: 6px 24px; border-radius: 30px; }
+    .ai-bright-big { font-family: var(--mono); font-size: 52px; font-weight: 700; line-height: 1; }
+    .ai-bright-unit { font-size: 18px; color: var(--c-muted2); }
+    .ai-label { font-family: var(--mono); font-size: 10px; color: var(--c-muted); }
+
+    /* SYSTEM STATUS */
+    .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 0.5px solid var(--c-border); }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { font-size: 12px; color: var(--c-muted2); }
+    .stat-val { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+    .bar-wrap { height: 8px; background: var(--c-surface); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+    .bar-fill  { height: 100%; border-radius: 99px; transition: width 0.7s ease, background 0.4s; }
+
+    /* LIGHT STATUS */
+    .light-big { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
+    .bulb-big { width: 60px; height: 60px; border-radius: 50%; transition: all 0.6s ease; position: relative; }
+    .bulb-big::after { content:''; position:absolute; inset:-6px; border-radius:50%; opacity:0.3; animation: glow 2.5s infinite; }
+    @keyframes glow { 0%,100%{opacity:0.2} 50%{opacity:0.45} }
+    .bulb-big.on-high { background: var(--c-high); box-shadow: 0 0 30px rgba(255,107,53,0.45); }
+    .bulb-big.on-high::after { background: radial-gradient(circle, var(--c-high), transparent); }
+    .bulb-big.on-med  { background: var(--c-med);  box-shadow: 0 0 24px rgba(245,197,24,0.4); }
+    .bulb-big.on-med::after  { background: radial-gradient(circle, var(--c-med), transparent); }
+    .bulb-big.on-low  { background: var(--c-low);  box-shadow: 0 0 20px rgba(24,212,240,0.35); }
+    .bulb-big.on-low::after  { background: radial-gradient(circle, var(--c-low), transparent); }
+    .bulb-big.off     { background: var(--c-surface); border:1.5px solid var(--c-border2); box-shadow:none; }
+    .bulb-big.off::after { display:none; }
+    .light-state-label { font-size: 13px; font-weight: 600; font-family: var(--mono); }
+    .light-desc { font-size: 11px; color: var(--c-muted); text-align: center; }
+
+    /* ANALYTICS */
+    .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .metric-chip { background: var(--c-surface); border: 0.5px solid var(--c-border); border-radius: 8px; padding: 10px 12px; }
+    .metric-num { font-size: 26px; font-weight: 700; font-family: var(--mono); line-height: 1.1; }
+    .metric-label { font-size: 11px; color: var(--c-muted); margin-top: 3px; }
+    .compare-row { margin-bottom: 10px; }
+    .compare-label { font-size: 11px; color: var(--c-muted2); display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .bar-track { height: 10px; background: var(--c-surface); border-radius: 99px; overflow: hidden; }
+    .bar-seg   { height: 100%; border-radius: 99px; transition: width 0.7s ease; }
+
+    /* GRAPH */
+    .graph-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .date-input { background: var(--c-surface); border: 0.5px solid var(--c-border2); border-radius: 6px; color: var(--c-text); font-family: var(--mono); font-size: 11px; padding: 5px 10px; cursor: pointer; outline: none; transition: border-color 0.2s; }
+    .date-input:hover, .date-input:focus { border-color: var(--c-accent); }
+    .date-input::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+    .graph-legend { display: flex; gap: 14px; margin-left: auto; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--c-muted2); }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .chart-wrap { position: relative; width: 100%; height: 220px; }
+
+    .input-sim-tag { display: none; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-title">⚡ Bukit Bintang · Piezo-AI Dashboard</div>
+    <div class="live-pill"><div class="live-dot"></div>LIVE DATA</div>
+  </div>
+  <div class="topbar-right">
+    <div class="interval-group">
+      <span class="interval-label">Refresh</span>
+      <button class="interval-btn active" id="iv-10" onclick="setInterval_('10')">10s</button>
+      <button class="interval-btn"        id="iv-30" onclick="setInterval_('30')">30s</button>
+      <button class="interval-btn"        id="iv-60" onclick="setInterval_('60')">1m</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span class="refresh-countdown" id="countdown-text">next in 10s</span>
+      <div class="countdown-bar-wrap"><div class="countdown-bar" id="countdown-bar" style="width:100%"></div></div>
+    </div>
+    <div id="clock-display">--:--:--</div>
+    <button class="btn" onclick="refreshAll()">↻ Refresh</button>
+    <a class="btn btn-analytics" href="Analytics_Webpage.html" target="_blank">📊 Analytics</a>
+  </div>
+</div>
+
+<div class="zone-map-wrap">
+  <div class="zone-map-label">All Zones — click to focus →</div>
+  <div class="zone-tabs" id="zone-tabs"></div>
+</div>
+
+<div class="main">
+
+  <div class="section-hdr">
+    <div class="section-hdr-text">Viewing</div>
+    <div class="section-hdr-zone" id="section-zone-label">Zone A</div>
+    <div class="section-line"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">1 — AI output</div>
+    <div class="ai-output-big" id="ai-output"></div>
+  </div>
+
+  <div class="card col2">
+    <div class="card-label">2 — Input data stream</div>
+    <div class="inputs-grid" id="inputs"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">3 — System status</div>
+    <div id="sys-stats"></div>
+    <div style="margin-top:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
+        <span style="color:var(--c-muted)">Battery level</span>
+        <span id="bat-pct" style="font-family:var(--mono);font-size:11px;"></span>
+      </div>
+      <div class="bar-wrap"><div class="bar-fill" id="bat-bar"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">4 — Light status</div>
+    <div class="light-big" id="light-status"></div>
+  </div>
+
+  <div class="card col2">
+    <div class="card-label">5 — Analytics</div>
+    <div class="analytics-grid" id="analytics-chips"></div>
+    <div id="compare"></div>
+  </div>
+
+
+
+  <div class="card col3">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div class="card-label" id="graph-label" style="margin-bottom:0;">6 — Daily usage · AI vs Normal (kWh)</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span style="font-family:var(--mono);font-size:9px;color:var(--c-muted);letter-spacing:0.06em;">ALL ZONES COMPARISON →</span>
+        <a class="btn btn-analytics" href="Analytics_Webpage.html" target="_blank" style="font-size:10px;">Open Analytics ↗</a>
+      </div>
+    </div>
+    <div class="graph-controls">
+      <label style="font-family:var(--mono);font-size:10px;color:var(--c-muted);">Date:</label>
+      <input type="date" class="date-input" id="date-picker" onchange="onDateChange()" min="2026-05-01" max="2026-05-07"/>
+      <button class="btn" onclick="setToday()">Today</button>
+      <button class="btn" onclick="shiftDate(-1)">◀ Prev</button>
+      <button class="btn" onclick="shiftDate(1)">Next ▶</button>
+      <div class="graph-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-muted2)"></div>Normal system</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-green)"></div>AI system</div>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="usageChart"></canvas></div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  REAL DATASET — Bukit Bintang (May 1–7, 2026)
+//  Keys: date → zone_idx (0-3) → hour (0-23) → {p, w, t, d}
+//  p=people, w=weather, t=temp°C, d=day name
+// ═══════════════════════════════════════════════════════════
+const DS = {"2026-05-01":{"0":{"0":{"p":2982,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":452,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":434,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":439,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":425,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":2952,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":2970,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":5095,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":7218,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":5167,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":2969,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":2988,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":6379,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":6374,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":3044,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":2974,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":2983,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":5320,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":7654,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":7651,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":3041,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":2991,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":2975,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":2969,"w":"Clear","t":24.9,"d":"Friday"}},"1":{"0":{"p":2103,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":307,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":288,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":300,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":307,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":2053,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":2102,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":3598,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":5101,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":3666,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":2099,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":2110,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":4514,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":4501,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":2140,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":2090,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":2112,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":3753,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":5400,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":5396,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":2160,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":2095,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":2086,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":2101,"w":"Clear","t":24.9,"d":"Friday"}},"2":{"0":{"p":1579,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":230,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":219,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":230,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":228,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":1558,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":1572,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":2698,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":3812,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":2731,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":1573,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":1583,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":3378,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":3371,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":1598,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":1570,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":1577,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":2808,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":3818,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":3823,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":3825,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":3825,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":3815,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":2739,"w":"Clear","t":24.9,"d":"Friday"}},"3":{"0":{"p":1228,"w":"Clear","t":24.4,"d":"Friday"},"1":{"p":185,"w":"Clear","t":24.0,"d":"Friday"},"2":{"p":181,"w":"Clear","t":24.0,"d":"Friday"},"3":{"p":180,"w":"Clear","t":24.4,"d":"Friday"},"4":{"p":175,"w":"Clear","t":24.9,"d":"Friday"},"5":{"p":1208,"w":"Clear","t":25.8,"d":"Friday"},"6":{"p":1221,"w":"Clear","t":26.8,"d":"Friday"},"7":{"p":2098,"w":"Clear","t":27.9,"d":"Friday"},"8":{"p":2976,"w":"Clear","t":29.1,"d":"Friday"},"9":{"p":2130,"w":"Clear","t":30.2,"d":"Friday"},"10":{"p":1219,"w":"Clear","t":31.2,"d":"Friday"},"11":{"p":1224,"w":"Clear","t":32.1,"d":"Friday"},"12":{"p":2625,"w":"Clear","t":32.6,"d":"Friday"},"13":{"p":2621,"w":"Clear","t":33.0,"d":"Friday"},"14":{"p":1243,"w":"Clear","t":33.0,"d":"Friday"},"15":{"p":1218,"w":"Thunderstorm","t":30.6,"d":"Friday"},"16":{"p":1219,"w":"Thunderstorm","t":30.0,"d":"Friday"},"17":{"p":2187,"w":"Thunderstorm","t":29.2,"d":"Friday"},"18":{"p":3149,"w":"Thunderstorm","t":28.2,"d":"Friday"},"19":{"p":3154,"w":"Clear","t":29.1,"d":"Friday"},"20":{"p":1256,"w":"Clear","t":27.9,"d":"Friday"},"21":{"p":1229,"w":"Clear","t":26.8,"d":"Friday"},"22":{"p":1224,"w":"Clear","t":25.8,"d":"Friday"},"23":{"p":1226,"w":"Clear","t":24.9,"d":"Friday"}}},"2026-05-02":{"0":{"0":{"p":3400,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":851,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":867,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":830,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":843,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":850,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":3360,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":3394,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":3393,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":3404,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":3397,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":7655,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":7657,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":7650,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":7658,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":7657,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":7650,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":7651,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":16125,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":16154,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":16108,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":16143,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":16172,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":15077,"w":"Clear","t":24.9,"d":"Saturday"}},"1":{"0":{"p":2403,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":597,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":600,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":584,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":600,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":601,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":2377,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":2416,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":2386,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":2393,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":2407,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":5396,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":5393,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":5399,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":5395,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":5398,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":5394,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":5398,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":8850,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":8851,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":8837,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":8863,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":8869,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":8328,"w":"Clear","t":24.9,"d":"Saturday"}},"2":{"0":{"p":1798,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":449,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":446,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":447,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":446,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":440,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":1773,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":1802,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":1802,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":1810,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":1803,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":4047,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":4048,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":4042,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":4043,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":4053,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":4045,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":4041,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":4499,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":4501,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":4499,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":4500,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":4499,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":3182,"w":"Clear","t":24.9,"d":"Saturday"}},"3":{"0":{"p":1400,"w":"Clear","t":24.4,"d":"Saturday"},"1":{"p":351,"w":"Clear","t":24.0,"d":"Saturday"},"2":{"p":350,"w":"Clear","t":24.0,"d":"Saturday"},"3":{"p":351,"w":"Clear","t":24.4,"d":"Saturday"},"4":{"p":348,"w":"Clear","t":24.9,"d":"Saturday"},"5":{"p":354,"w":"Clear","t":25.8,"d":"Saturday"},"6":{"p":1375,"w":"Clear","t":26.8,"d":"Saturday"},"7":{"p":1398,"w":"Clear","t":27.9,"d":"Saturday"},"8":{"p":1400,"w":"Clear","t":29.1,"d":"Saturday"},"9":{"p":1398,"w":"Clear","t":30.2,"d":"Saturday"},"10":{"p":1396,"w":"Clear","t":31.2,"d":"Saturday"},"11":{"p":3152,"w":"Clear","t":32.1,"d":"Saturday"},"12":{"p":3150,"w":"Clear","t":32.6,"d":"Saturday"},"13":{"p":3151,"w":"Clear","t":33.0,"d":"Saturday"},"14":{"p":3149,"w":"Clear","t":33.0,"d":"Saturday"},"15":{"p":3151,"w":"Thunderstorm","t":30.6,"d":"Saturday"},"16":{"p":3154,"w":"Thunderstorm","t":30.2,"d":"Saturday"},"17":{"p":3157,"w":"Thunderstorm","t":29.2,"d":"Saturday"},"18":{"p":4374,"w":"Thunderstorm","t":28.3,"d":"Saturday"},"19":{"p":4374,"w":"Clear","t":29.0,"d":"Saturday"},"20":{"p":4370,"w":"Clear","t":27.9,"d":"Saturday"},"21":{"p":4367,"w":"Clear","t":26.8,"d":"Saturday"},"22":{"p":4381,"w":"Clear","t":25.8,"d":"Saturday"},"23":{"p":4135,"w":"Clear","t":24.9,"d":"Saturday"}}},"2026-05-03":{"0":{"0":{"p":3411,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":853,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":846,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":871,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":856,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":838,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":3355,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":3378,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":3408,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":3409,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":3406,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":7646,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":7640,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":7646,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":7654,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":7666,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":7654,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":7657,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":7649,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":7638,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":7641,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":3481,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":3398,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":3387,"w":"Clear","t":24.9,"d":"Sunday"}},"1":{"0":{"p":2398,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":597,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":588,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":602,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":594,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":603,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":2367,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":2395,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":2399,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":2397,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":2393,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":5401,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":5404,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":5391,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":5399,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":5391,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":5407,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":5404,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":5411,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":5405,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":5408,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":2453,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":2400,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":2419,"w":"Clear","t":24.9,"d":"Sunday"}},"2":{"0":{"p":1795,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":450,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":456,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":444,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":449,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":452,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":1776,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":1796,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":1797,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":1804,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":1798,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":4045,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":4050,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":4048,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":4057,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":4050,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":4051,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":4046,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":4504,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":4497,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":4501,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":4494,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":4492,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":3194,"w":"Clear","t":24.9,"d":"Sunday"}},"3":{"0":{"p":1404,"w":"Clear","t":24.4,"d":"Sunday"},"1":{"p":350,"w":"Clear","t":24.0,"d":"Sunday"},"2":{"p":341,"w":"Clear","t":24.0,"d":"Sunday"},"3":{"p":348,"w":"Clear","t":24.4,"d":"Sunday"},"4":{"p":343,"w":"Clear","t":24.9,"d":"Sunday"},"5":{"p":344,"w":"Clear","t":25.8,"d":"Sunday"},"6":{"p":1388,"w":"Clear","t":26.8,"d":"Sunday"},"7":{"p":1399,"w":"Clear","t":27.9,"d":"Sunday"},"8":{"p":1393,"w":"Clear","t":29.1,"d":"Sunday"},"9":{"p":1398,"w":"Clear","t":30.2,"d":"Sunday"},"10":{"p":1403,"w":"Clear","t":31.2,"d":"Sunday"},"11":{"p":3154,"w":"Clear","t":32.1,"d":"Sunday"},"12":{"p":3159,"w":"Clear","t":32.6,"d":"Sunday"},"13":{"p":3143,"w":"Clear","t":33.0,"d":"Sunday"},"14":{"p":3152,"w":"Clear","t":33.0,"d":"Sunday"},"15":{"p":3150,"w":"Thunderstorm","t":30.6,"d":"Sunday"},"16":{"p":3149,"w":"Thunderstorm","t":30.1,"d":"Sunday"},"17":{"p":3150,"w":"Thunderstorm","t":29.4,"d":"Sunday"},"18":{"p":3148,"w":"Thunderstorm","t":28.2,"d":"Sunday"},"19":{"p":3147,"w":"Clear","t":29.1,"d":"Sunday"},"20":{"p":3147,"w":"Clear","t":27.9,"d":"Sunday"},"21":{"p":1429,"w":"Clear","t":26.8,"d":"Sunday"},"22":{"p":1398,"w":"Clear","t":25.8,"d":"Sunday"},"23":{"p":1399,"w":"Clear","t":24.9,"d":"Sunday"}}},"2026-05-04":{"0":{"0":{"p":2978,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":437,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":438,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":412,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":423,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":2942,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":2977,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":5120,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":7228,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":5154,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":2968,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":2959,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":6373,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":6368,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":3033,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":2957,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":2970,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":5311,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":7642,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":7644,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":3068,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":2966,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":2980,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":2969,"w":"Clear","t":24.9,"d":"Monday"}},"1":{"0":{"p":2098,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":299,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":305,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":300,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":300,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":2071,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":2095,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":3600,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":5091,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":3653,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":2102,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":2106,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":4506,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":4486,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":2134,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":2105,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":2095,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":3753,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":5402,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":5387,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":2157,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":2101,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":2098,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":2092,"w":"Clear","t":24.9,"d":"Monday"}},"2":{"0":{"p":1573,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":231,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":232,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":227,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":228,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":1550,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":1575,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":2697,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":3823,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":2745,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":1575,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":1567,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":3388,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":3362,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":1603,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":1578,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":1576,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":2811,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":3824,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":3820,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":3829,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":3823,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":3829,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":2729,"w":"Clear","t":24.9,"d":"Monday"}},"3":{"0":{"p":1221,"w":"Clear","t":24.4,"d":"Monday"},"1":{"p":178,"w":"Clear","t":24.0,"d":"Monday"},"2":{"p":179,"w":"Clear","t":24.0,"d":"Monday"},"3":{"p":174,"w":"Clear","t":24.4,"d":"Monday"},"4":{"p":182,"w":"Clear","t":24.9,"d":"Monday"},"5":{"p":1210,"w":"Clear","t":25.8,"d":"Monday"},"6":{"p":1224,"w":"Clear","t":26.8,"d":"Monday"},"7":{"p":2101,"w":"Clear","t":27.9,"d":"Monday"},"8":{"p":2975,"w":"Clear","t":29.1,"d":"Monday"},"9":{"p":2127,"w":"Clear","t":30.2,"d":"Monday"},"10":{"p":1231,"w":"Clear","t":31.2,"d":"Monday"},"11":{"p":1225,"w":"Clear","t":32.1,"d":"Monday"},"12":{"p":2627,"w":"Clear","t":32.6,"d":"Monday"},"13":{"p":2627,"w":"Clear","t":33.0,"d":"Monday"},"14":{"p":1253,"w":"Clear","t":33.0,"d":"Monday"},"15":{"p":1224,"w":"Thunderstorm","t":30.7,"d":"Monday"},"16":{"p":1225,"w":"Thunderstorm","t":30.1,"d":"Monday"},"17":{"p":2181,"w":"Thunderstorm","t":29.3,"d":"Monday"},"18":{"p":3144,"w":"Thunderstorm","t":28.2,"d":"Monday"},"19":{"p":3156,"w":"Clear","t":29.1,"d":"Monday"},"20":{"p":1256,"w":"Clear","t":27.9,"d":"Monday"},"21":{"p":1219,"w":"Clear","t":26.8,"d":"Monday"},"22":{"p":1223,"w":"Clear","t":25.8,"d":"Monday"},"23":{"p":1220,"w":"Clear","t":24.9,"d":"Monday"}}},"2026-05-05":{"0":{"0":{"p":2994,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":432,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":442,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":439,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":431,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":2930,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":2982,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":5090,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":7239,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":5180,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":2977,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":3000,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":6365,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":6391,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":3031,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":2966,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":2988,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":5314,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":7648,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":7644,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":3034,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":2978,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":2978,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":2986,"w":"Clear","t":24.9,"d":"Tuesday"}},"1":{"0":{"p":2085,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":307,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":304,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":307,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":302,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":2070,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":2092,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":3598,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":5123,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":3651,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":2106,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":2094,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":4505,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":4501,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":2154,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":2095,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":2090,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":3750,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":5401,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":5397,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":2154,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":2103,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":2104,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":2101,"w":"Clear","t":24.9,"d":"Tuesday"}},"2":{"0":{"p":1565,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":239,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":231,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":235,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":234,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":1558,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":1581,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":2699,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":3821,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":2738,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":1575,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":1568,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":3371,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":3368,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":1614,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":1578,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":1565,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":2814,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":3830,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":3827,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":3823,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":3821,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":3812,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":2742,"w":"Clear","t":24.9,"d":"Tuesday"}},"3":{"0":{"p":1221,"w":"Clear","t":24.4,"d":"Tuesday"},"1":{"p":180,"w":"Clear","t":24.0,"d":"Tuesday"},"2":{"p":176,"w":"Clear","t":24.0,"d":"Tuesday"},"3":{"p":170,"w":"Clear","t":24.4,"d":"Tuesday"},"4":{"p":184,"w":"Clear","t":24.9,"d":"Tuesday"},"5":{"p":1208,"w":"Clear","t":25.8,"d":"Tuesday"},"6":{"p":1225,"w":"Clear","t":26.8,"d":"Tuesday"},"7":{"p":2099,"w":"Clear","t":27.9,"d":"Tuesday"},"8":{"p":2973,"w":"Clear","t":29.1,"d":"Tuesday"},"9":{"p":2129,"w":"Clear","t":30.2,"d":"Tuesday"},"10":{"p":1224,"w":"Clear","t":31.2,"d":"Tuesday"},"11":{"p":1227,"w":"Clear","t":32.1,"d":"Tuesday"},"12":{"p":2621,"w":"Clear","t":32.6,"d":"Tuesday"},"13":{"p":2625,"w":"Clear","t":33.0,"d":"Tuesday"},"14":{"p":1253,"w":"Clear","t":33.0,"d":"Tuesday"},"15":{"p":1226,"w":"Thunderstorm","t":30.6,"d":"Tuesday"},"16":{"p":1224,"w":"Thunderstorm","t":30.0,"d":"Tuesday"},"17":{"p":2182,"w":"Thunderstorm","t":29.2,"d":"Tuesday"},"18":{"p":3154,"w":"Thunderstorm","t":28.2,"d":"Tuesday"},"19":{"p":3151,"w":"Clear","t":29.1,"d":"Tuesday"},"20":{"p":1255,"w":"Clear","t":27.9,"d":"Tuesday"},"21":{"p":1221,"w":"Clear","t":26.8,"d":"Tuesday"},"22":{"p":1224,"w":"Clear","t":25.8,"d":"Tuesday"},"23":{"p":1223,"w":"Clear","t":24.9,"d":"Tuesday"}}},"2026-05-06":{"0":{"0":{"p":2985,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":428,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":420,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":430,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":430,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":2936,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":2989,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":5111,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":7222,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":5156,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":2979,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":2978,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":6398,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":6383,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":3027,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":2968,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":2971,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":5302,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":7651,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":7641,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":3041,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":2993,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":2980,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":2989,"w":"Clear","t":24.9,"d":"Wednesday"}},"1":{"0":{"p":2102,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":300,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":304,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":305,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":304,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":2095,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":2100,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":3593,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":5103,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":3653,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":2098,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":2101,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":4499,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":4495,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":2145,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":2104,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":2078,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":3750,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":5406,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":5403,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":2153,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":2100,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":2110,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":2102,"w":"Clear","t":24.9,"d":"Wednesday"}},"2":{"0":{"p":1576,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":235,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":231,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":234,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":226,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":1556,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":1584,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":2701,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":3828,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":2743,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":1575,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":1578,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":3371,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":3369,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":1606,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":1567,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":1568,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":2811,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":3821,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":3826,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":3829,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":3828,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":3823,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":2738,"w":"Clear","t":24.9,"d":"Wednesday"}},"3":{"0":{"p":1225,"w":"Clear","t":24.4,"d":"Wednesday"},"1":{"p":183,"w":"Clear","t":24.0,"d":"Wednesday"},"2":{"p":181,"w":"Clear","t":24.0,"d":"Wednesday"},"3":{"p":179,"w":"Clear","t":24.4,"d":"Wednesday"},"4":{"p":182,"w":"Clear","t":24.9,"d":"Wednesday"},"5":{"p":1209,"w":"Clear","t":25.8,"d":"Wednesday"},"6":{"p":1225,"w":"Clear","t":26.8,"d":"Wednesday"},"7":{"p":2098,"w":"Clear","t":27.9,"d":"Wednesday"},"8":{"p":2976,"w":"Clear","t":29.1,"d":"Wednesday"},"9":{"p":2122,"w":"Clear","t":30.2,"d":"Wednesday"},"10":{"p":1221,"w":"Clear","t":31.2,"d":"Wednesday"},"11":{"p":1222,"w":"Clear","t":32.1,"d":"Wednesday"},"12":{"p":2614,"w":"Clear","t":32.6,"d":"Wednesday"},"13":{"p":2623,"w":"Clear","t":33.0,"d":"Wednesday"},"14":{"p":1248,"w":"Clear","t":33.0,"d":"Wednesday"},"15":{"p":1226,"w":"Thunderstorm","t":30.5,"d":"Wednesday"},"16":{"p":1217,"w":"Thunderstorm","t":30.1,"d":"Wednesday"},"17":{"p":2189,"w":"Thunderstorm","t":29.2,"d":"Wednesday"},"18":{"p":3146,"w":"Thunderstorm","t":28.3,"d":"Wednesday"},"19":{"p":3146,"w":"Clear","t":29.1,"d":"Wednesday"},"20":{"p":1255,"w":"Clear","t":27.9,"d":"Wednesday"},"21":{"p":1223,"w":"Clear","t":26.8,"d":"Wednesday"},"22":{"p":1222,"w":"Clear","t":25.8,"d":"Wednesday"},"23":{"p":1225,"w":"Clear","t":24.9,"d":"Wednesday"}}},"2026-05-07":{"0":{"0":{"p":2983,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":423,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":432,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":429,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":422,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":2909,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":2998,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":5101,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":7226,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":5187,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":2963,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":2975,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":6385,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":6381,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":3032,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":2964,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":2973,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":5317,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":7657,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":7645,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":3050,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":2982,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":2979,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":2971,"w":"Clear","t":24.9,"d":"Thursday"}},"1":{"0":{"p":2103,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":300,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":303,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":298,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":317,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":2074,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":2112,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":3596,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":5099,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":3646,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":2097,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":2095,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":4499,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":4484,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":2128,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":2101,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":2099,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":3743,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":5397,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":5399,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":2153,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":2101,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":2101,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":2090,"w":"Clear","t":24.9,"d":"Thursday"}},"2":{"0":{"p":1575,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":222,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":220,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":224,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":237,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":1546,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":1566,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":2702,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":3816,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":2735,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":1577,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":1576,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":3371,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":3378,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":1608,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":1579,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":1583,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":2812,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":3822,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":3834,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":3828,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":3830,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":3831,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":2735,"w":"Clear","t":24.9,"d":"Thursday"}},"3":{"0":{"p":1225,"w":"Clear","t":24.4,"d":"Thursday"},"1":{"p":187,"w":"Clear","t":24.0,"d":"Thursday"},"2":{"p":170,"w":"Clear","t":24.0,"d":"Thursday"},"3":{"p":175,"w":"Clear","t":24.4,"d":"Thursday"},"4":{"p":179,"w":"Clear","t":24.9,"d":"Thursday"},"5":{"p":1202,"w":"Clear","t":25.8,"d":"Thursday"},"6":{"p":1227,"w":"Clear","t":26.8,"d":"Thursday"},"7":{"p":2099,"w":"Clear","t":27.9,"d":"Thursday"},"8":{"p":2974,"w":"Clear","t":29.1,"d":"Thursday"},"9":{"p":2138,"w":"Clear","t":30.2,"d":"Thursday"},"10":{"p":1225,"w":"Clear","t":31.2,"d":"Thursday"},"11":{"p":1229,"w":"Clear","t":32.1,"d":"Thursday"},"12":{"p":2629,"w":"Clear","t":32.6,"d":"Thursday"},"13":{"p":2622,"w":"Clear","t":33.0,"d":"Thursday"},"14":{"p":1251,"w":"Clear","t":33.0,"d":"Thursday"},"15":{"p":1225,"w":"Thunderstorm","t":30.6,"d":"Thursday"},"16":{"p":1225,"w":"Thunderstorm","t":30.0,"d":"Thursday"},"17":{"p":2186,"w":"Thunderstorm","t":29.2,"d":"Thursday"},"18":{"p":3155,"w":"Thunderstorm","t":28.2,"d":"Thursday"},"19":{"p":3140,"w":"Clear","t":29.0,"d":"Thursday"},"20":{"p":1253,"w":"Clear","t":27.9,"d":"Thursday"},"21":{"p":1220,"w":"Clear","t":26.8,"d":"Thursday"},"22":{"p":1221,"w":"Clear","t":25.8,"d":"Thursday"},"23":{"p":1218,"w":"Clear","t":24.9,"d":"Thursday"}}}};
+
+// ═══════════════════════════════════════════════════════════
+//  ZONE CONFIG — Real Bukit Bintang locations
+// ═══════════════════════════════════════════════════════════
+const ZONES = [
+  { id: '0', short: 'Zone A', name: 'Pavilion KL Crossing',     icon: '🏛️', line: 'MRT Kajang Line' },
+  { id: '1', short: 'Zone B', name: 'Lot 10 / MRT Entrance',    icon: '🚇', line: 'MRT Kajang Line' },
+  { id: '2', short: 'Zone C', name: 'Jalan Alor Entrance',      icon: '🌃', line: 'MRT Kajang Line' },
+  { id: '3', short: 'Zone D', name: 'Fahrenheit88 Walkway',     icon: '🏢', line: 'MRT Kajang Line' },
+];
+const BRIGHT_MAP = { HIGH: 100, MEDIUM: 60, LOW: 20, OFF: 0 };
+const WEATHER_ICONS = { Clear:'☀️', Cloudy:'☁️', Rain:'🌧️', Drizzle:'🌦️', Thunderstorm:'⛈️' };
+
+let selectedZone = 0;
+let chartInstance = null;
+let allZoneData = [];
+let refreshIntervalMs = 10000;
+let refreshTimerId = null;
+let countdownTimerId = null;
+
+// ── HELPERS ──────────────────────────────────────────────
+function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function levelColor(l){ return l==='HIGH'?'var(--c-high)':l==='MEDIUM'?'var(--c-med)':l==='LOW'?'var(--c-low)':'var(--c-off)'; }
+function levelBg(l){    return l==='HIGH'?'rgba(255,107,53,0.15)':l==='MEDIUM'?'rgba(245,197,24,0.12)':l==='LOW'?'rgba(24,212,240,0.1)':'rgba(58,68,89,0.2)'; }
+function bulbClass(l){  return l==='HIGH'?'on-high':l==='MEDIUM'?'on-med':l==='LOW'?'on-low':'off'; }
+function todayStr(){    return new Date().toISOString().split('T')[0]; }
+function clampDate(str){ return DS[str] ? str : '2026-05-01'; }
+function formatDate(str){
+  if(!str) return '';
+  const [y,m,day] = str.split('-');
+  const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parseInt(day)} ${mn[parseInt(m)-1]} ${y}`;
+}
+
+// ── RF DECISION (Bukit Bintang scale) ────────────────────
+// People counts are in the thousands, so thresholds are different from random sim
+function rfDecision(people){
+  if (people > 8000)  return 'HIGH';
+  if (people > 4000)  return 'MEDIUM';
+  if (people > 1000)  return 'LOW';
+  return 'OFF';
+}
+
+// ── GET ZONE DATA from real dataset ──────────────────────
+function getZoneData(zoneIdx){
+  const date = clampDate(todayStr());
+  const hour = String(new Date().getHours());
+  const zk   = String(zoneIdx);
+  const row  = DS[date]?.[zk]?.[hour];
+  if (!row) return null;
+
+  // Apply ±3% live jitter to people count so each refresh shows updated values
+  const jitter = 0.97 + Math.random() * 0.06;
+  const livePeople = Math.round(row.p * jitter);
+  const level = rfDecision(livePeople);
+
+  // Live temperature micro-variation ±0.2°C
+  const liveTemp = +(row.t + (Math.random() * 0.4 - 0.2)).toFixed(1);
+
+  return {
+    zoneIdx,
+    people:      livePeople,
+    weather:     row.w,
+    temp:        liveTemp,
+    day:         row.d,
+    level,
+    brightness:  BRIGHT_MAP[level],
+    piezo:       randInt(100, 620),
+    harvested:   +(randInt(30, 80) * 0.1).toFixed(1),
+    battery:     randInt(35, 95),
+    energySaved: Math.round(25 + (BRIGHT_MAP[level] === 0 ? 65 : (100 - BRIGHT_MAP[level]) * 0.5)),
+  };
+}
+
+function generateAllZones(){
+  allZoneData = ZONES.map((_, i) => getZoneData(i));
+}
+
+// ── HOURLY DATA for graph (people-derived kWh) ───────────
+function getHourlyData(zoneIdx, dateStr){
+  const d   = clampDate(dateStr);
+  const zk  = String(zoneIdx);
+  const zoneDay = DS[d]?.[zk];
+  if (!zoneDay) return null;
+
+  const hours  = Array.from({length:24}, (_,h)=>`${String(h).padStart(2,'0')}:00`);
+  const normal = hours.map((_,h) => {
+    const row = zoneDay[String(h)];
+    if (!row) return 0;
+    // Normal system: always 100% brightness proportional to crowd
+    return +((row.p * 0.0045 + 8).toFixed(1));
+  });
+  const ai = hours.map((_,h) => {
+    const row = zoneDay[String(h)];
+    if (!row) return 0;
+    const level = rfDecision(row.p);
+    const dimFactor = BRIGHT_MAP[level] / 100;
+    return +((row.p * 0.0045 + 8) * dimFactor * 0.85).toFixed(1);
+  });
+  return { hours, normal, ai };
+}
+
+// ── CLOCK ─────────────────────────────────────────────────
+let panelClockTimer = null;
+function updateTopClock(){
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  const date = now.toLocaleDateString('en-MY', {day:'numeric',month:'short',year:'numeric'});
+  document.getElementById('clock-display').textContent = `${date}  ${h}:${m}:${s}`;
+}
+setInterval(updateTopClock, 1000); updateTopClock();
+
+function startPanelClock(){
+  if(panelClockTimer) clearInterval(panelClockTimer);
+  function tick(){
+    const el = document.getElementById('panel-clock');
+    if(!el){ clearInterval(panelClockTimer); return; }
+    const now = new Date();
+    const h=String(now.getHours()).padStart(2,'0');
+    const m=String(now.getMinutes()).padStart(2,'0');
+    const s=String(now.getSeconds()).padStart(2,'0');
+    el.textContent=`${h}:${m}:${s}`;
+  }
+  tick();
+  panelClockTimer = setInterval(tick,1000);
+}
+
+// ── REFRESH INTERVAL ──────────────────────────────────────
+function setInterval_(secs){
+  ['10','30','60'].forEach(s => document.getElementById('iv-'+s).classList.toggle('active', s===secs));
+  refreshIntervalMs = parseInt(secs) * 1000;
+  clearInterval(refreshTimerId);
+  clearInterval(countdownTimerId);
+  startCountdown();
+  refreshTimerId = setInterval(()=>{ refreshAll(); startCountdown(); }, refreshIntervalMs);
+}
+
+function startCountdown(){
+  const total = refreshIntervalMs / 1000;
+  let remaining = total;
+  const bar  = document.getElementById('countdown-bar');
+  const text = document.getElementById('countdown-text');
+  clearInterval(countdownTimerId);
+  function tick(){ remaining=Math.max(0,remaining-1); bar.style.width=(remaining/total*100)+'%'; text.textContent=`next in ${remaining}s`; }
+  tick();
+  countdownTimerId = setInterval(tick, 1000);
+}
+
+// ── RENDER ZONE TABS ──────────────────────────────────────
+function renderZoneTabs(){
+  document.getElementById('zone-tabs').innerHTML = ZONES.map((z,i)=>{
+    const d = allZoneData[i];
+    if(!d) return '';
+    return `<div class="zone-tab ${i===selectedZone?'selected':''}" onclick="selectZone(${i})">
+      <div class="zone-icon">${z.icon}</div>
+      <div class="zone-tab-name">${z.name}</div>
+      <div class="zone-tab-sub">${z.short}</div>
+      <div class="zone-tab-level" style="background:${levelBg(d.level)};color:${levelColor(d.level)};border:0.5px solid ${levelColor(d.level)}40;">${d.level}</div>
+      <div class="zone-tab-bright">${d.brightness}%</div>
+    </div>`;
+  }).join('');
+}
+
+// ── RENDER AI OUTPUT ──────────────────────────────────────
+function renderAIOutput(d){
+  document.getElementById('ai-output').innerHTML=`
+    <div class="ai-label">Demand level</div>
+    <div class="ai-level-badge" style="background:${levelBg(d.level)};color:${levelColor(d.level)};border:1px solid ${levelColor(d.level)}50;">${d.level}</div>
+    <div class="ai-label" style="margin-top:4px;">Brightness</div>
+    <div class="ai-bright-big" style="color:${levelColor(d.level)}">${d.brightness}<span class="ai-bright-unit">%</span></div>
+    <div class="ai-label">Random Forest Classifier</div>`;
+}
+
+// ── RENDER INPUTS ─────────────────────────────────────────
+function renderInputs(d){
+  const ico = WEATHER_ICONS[d.weather] || '🌤️';
+  document.getElementById('inputs').innerHTML=`
+    <div class="input-row">
+      <div class="input-icon">👥</div>
+      <div class="input-key">People count</div>
+      <div class="input-val">${d.people.toLocaleString()}<small>persons</small></div>
+    </div>
+    <div class="input-row">
+      <div class="input-icon">🕐</div>
+      <div class="input-key">Current time</div>
+      <div class="input-val" style="font-size:16px;" id="panel-clock">--:--:--</div>
+      <small style="font-family:var(--mono);font-size:9px;color:var(--c-muted);">${d.day}</small>
+    </div>
+    <div class="input-row">
+      <div class="input-icon">${ico}</div>
+      <div class="input-key">Weather · ${d.temp}°C</div>
+      <div class="input-val" style="font-size:15px;">${d.weather}</div>
+    </div>
+    <div class="input-row">
+      <div class="input-icon">⚡</div>
+      <div class="input-key">Piezo reading</div>
+      <div class="input-val">${d.piezo}<small>units</small></div>
+    </div>`;
+  startPanelClock();
+}
+
+// ── RENDER SYSTEM STATUS ──────────────────────────────────
+function renderSystemStatus(d){
+  document.getElementById('sys-stats').innerHTML=`
+    <div class="stat-row">
+      <span class="stat-label">Energy harvested</span>
+      <span class="stat-val" style="color:var(--c-green)">${d.harvested} W</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Zone status</span>
+      <span class="stat-val" style="color:${levelColor(d.level)}">${d.level}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">AI model</span>
+      <span class="stat-val" style="color:var(--c-accent2)">Random Forest</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Temperature</span>
+      <span class="stat-val">${d.temp}°C</span>
+    </div>`;
+  const bar=document.getElementById('bat-bar');
+  bar.style.width=d.battery+'%';
+  bar.style.background=d.battery>60?'var(--c-green)':d.battery>30?'var(--c-med)':'var(--c-high)';
+  document.getElementById('bat-pct').textContent=`${d.battery}%`;
+}
+
+// ── RENDER LIGHT STATUS ───────────────────────────────────
+function renderLightStatus(d){
+  const zone = ZONES[d.zoneIdx];
+  const desc={HIGH:'Full brightness — concert / event surge detected',MEDIUM:'Moderate — elevated foot traffic',LOW:'Dim mode — normal / quiet period',OFF:'Light off — minimal activity'}[d.level];
+  document.getElementById('light-status').innerHTML=`
+    <div class="bulb-big ${bulbClass(d.level)}"></div>
+    <div class="light-state-label" style="color:${levelColor(d.level)}">${d.brightness}% brightness</div>
+    <div class="ai-label">${zone.icon} ${zone.name}</div>
+    <div class="light-desc">${desc}</div>`;
+}
+
+// ── RENDER ANALYTICS ──────────────────────────────────────
+function renderAnalytics(d){
+  const aiUsage = 100 - d.energySaved;
+  const daily = (d.harvested * 24 / 1000).toFixed(2);
+  document.getElementById('analytics-chips').innerHTML=`
+    <div class="metric-chip">
+      <div class="metric-num" style="color:var(--c-green)">${d.energySaved}%</div>
+      <div class="metric-label">Energy saved vs normal</div>
+    </div>
+    <div class="metric-chip">
+      <div class="metric-num" style="color:var(--c-accent2)">${daily}</div>
+      <div class="metric-label">Est. daily harvest (kWh)</div>
+    </div>`;
+  document.getElementById('compare').innerHTML=`
+    <div class="compare-row">
+      <div class="compare-label"><span>AI system · ${ZONES[d.zoneIdx].name}</span><span style="color:var(--c-green)">${aiUsage}%</span></div>
+      <div class="bar-track"><div class="bar-seg" style="width:${aiUsage}%;background:var(--c-green)"></div></div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label"><span>Rule-based / Normal</span><span>100%</span></div>
+      <div class="bar-track"><div class="bar-seg" style="width:100%;background:var(--c-muted)"></div></div>
+    </div>`;
+}
+
+// ── RENDER GRAPH ──────────────────────────────────────────
+function renderGraph(){
+  const dateStr = document.getElementById('date-picker').value;
+  const data = getHourlyData(selectedZone, dateStr);
+  const zone = ZONES[selectedZone];
+
+  document.getElementById('graph-label').textContent =
+    `6 — Daily usage · ${zone.name} · AI vs Normal (kWh) · ${formatDate(dateStr)}`;
+
+  const ctx = document.getElementById('usageChart').getContext('2d');
+  if(chartInstance) chartInstance.destroy();
+
+  if(!data){ ctx.clearRect(0,0,500,220); return; }
+
+  chartInstance = new Chart(ctx,{
+    type:'line',
+    data:{labels:data.hours, datasets:[
+      {label:'Normal system', data:data.normal, borderColor:'rgba(138,150,173,0.7)', backgroundColor:'rgba(138,150,173,0.06)', borderWidth:1.5, pointRadius:2, pointHoverRadius:5, tension:0.4, fill:true},
+      {label:'AI system',     data:data.ai,     borderColor:'rgba(57,224,122,0.85)',  backgroundColor:'rgba(57,224,122,0.07)',  borderWidth:2,   pointRadius:2, pointHoverRadius:5, tension:0.4, fill:true}
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:false}, tooltip:{
+        backgroundColor:'rgba(14,17,24,0.92)', borderColor:'rgba(255,255,255,0.1)', borderWidth:0.5,
+        titleColor:'#8a96ad', bodyColor:'#dde3f0',
+        titleFont:{family:"'IBM Plex Mono',monospace",size:10},
+        bodyFont:{family:"'IBM Plex Mono',monospace",size:11}, padding:10,
+        callbacks:{
+          title: items=>`${items[0].label}  —  ${zone.name}`,
+          label: item=>` ${item.dataset.label}: ${item.parsed.y} kWh`,
+          afterBody: items=>{
+            if(items.length<2) return [];
+            const saved = ((items[0].parsed.y - items[1].parsed.y)/items[0].parsed.y*100).toFixed(0);
+            return [``, ` AI saves ${saved}% at this hour`];
+          }
+        }
+      }},
+      scales:{
+        x:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:9},maxRotation:0,maxTicksLimit:12},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'}},
+        y:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:9}},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'},title:{display:true,text:'kWh',color:'#5a6478',font:{size:9}}}
+      }
+    }
+  });
+}
+
+// ── DATE CONTROLS ─────────────────────────────────────────
+function setToday(){ document.getElementById('date-picker').value=clampDate(todayStr()); renderGraph(); }
+function shiftDate(delta){
+  const p=document.getElementById('date-picker');
+  const d=new Date(p.value||todayStr()); d.setDate(d.getDate()+delta);
+  const str=d.toISOString().split('T')[0];
+  p.value=DS[str]?str:(delta<0?'2026-05-01':'2026-05-07');
+  renderGraph();
+}
+function onDateChange(){ renderGraph(); }
+
+// ── ZONE SELECTION ────────────────────────────────────────
+function selectZone(idx){
+  selectedZone=idx;
+  document.getElementById('section-zone-label').textContent=`${ZONES[idx].icon} ${ZONES[idx].name}`;
+  renderAllPanels();
+}
+
+function renderAllPanels(){
+  const d=allZoneData[selectedZone];
+  if(!d) return;
+  renderZoneTabs();
+  renderAIOutput(d);
+  renderInputs(d);
+  renderSystemStatus(d);
+  renderLightStatus(d);
+  renderAnalytics(d);
+  renderGraph();
+}
+
+// ── MAIN REFRESH ──────────────────────────────────────────
+function refreshAll(){
+  generateAllZones();
+  renderAllPanels();
+}
+
+// ── INIT ──────────────────────────────────────────────────
+document.getElementById('date-picker').value = clampDate(todayStr());
+document.getElementById('section-zone-label').textContent = `${ZONES[0].icon} ${ZONES[0].name}`;
+refreshAll();
+startCountdown();
+refreshTimerId = setInterval(()=>{ refreshAll(); startCountdown(); }, refreshIntervalMs);
+</script>
+</body>
+</html>
