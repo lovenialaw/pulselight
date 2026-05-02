@@ -246,6 +246,44 @@ const ZONES = [
 const BRIGHT_MAP = { HIGH: 100, MEDIUM: 60, LOW: 20, OFF: 0 };
 const WEATHER_ICONS = { Clear:'☀️', Cloudy:'☁️', Rain:'🌧️', Drizzle:'🌦️', Thunderstorm:'⛈️' };
 
+// Bukit Bintang — live conditions via Open-Meteo (no API key)
+const BUKIT_LAT = 3.1478;
+const BUKIT_LON = 101.7053;
+let liveWeather = null;
+
+function wmoToWeatherLabel(code){
+  if(code === 0 || code === 1) return 'Clear';
+  if(code === 2 || code === 3) return 'Cloudy';
+  if(code >= 45 && code <= 48) return 'Cloudy';
+  if(code >= 51 && code <= 57) return 'Drizzle';
+  if(code >= 61 && code <= 67) return 'Rain';
+  if(code >= 71 && code <= 77) return 'Rain';
+  if(code >= 80 && code <= 82) return 'Rain';
+  if(code >= 85 && code <= 86) return 'Rain';
+  if(code >= 95) return 'Thunderstorm';
+  return 'Clear';
+}
+
+async function fetchLiveWeather(){
+  try{
+    const tz = encodeURIComponent('Asia/Kuala_Lumpur');
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${BUKIT_LAT}&longitude=${BUKIT_LON}&current=temperature_2m,weather_code&timezone=${tz}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(String(res.status));
+    const j = await res.json();
+    const c = j.current;
+    if(!c) throw new Error('no current');
+    liveWeather = {
+      label: wmoToWeatherLabel(c.weather_code),
+      tempC: c.temperature_2m,
+      code: c.weather_code
+    };
+  }catch(e){
+    console.warn('Open-Meteo (live weather) failed:', e);
+  }
+  return liveWeather;
+}
+
 let selectedZone = 0;
 let chartInstance = null;
 let allZoneData = [];
@@ -289,13 +327,15 @@ function getZoneData(zoneIdx){
   const livePeople = Math.round(row.p * jitter);
   const level = rfDecision(livePeople);
 
-  // Live temperature micro-variation ±0.2°C
-  const liveTemp = +(row.t + (Math.random() * 0.4 - 0.2)).toFixed(1);
+  const weather = liveWeather ? liveWeather.label : row.w;
+  const liveTemp = liveWeather
+    ? +Number(liveWeather.tempC).toFixed(1)
+    : +(row.t + (Math.random() * 0.4 - 0.2)).toFixed(1);
 
   return {
     zoneIdx,
     people:      livePeople,
-    weather:     row.w,
+    weather,
     temp:        liveTemp,
     day:         row.d,
     level,
@@ -425,7 +465,7 @@ function renderInputs(d){
     </div>
     <div class="input-row">
       <div class="input-icon">${ico}</div>
-      <div class="input-key">Weather · ${d.temp}°C</div>
+      <div class="input-key">Weather · ${d.temp}°C${liveWeather ? ' · Open-Meteo' : ''}</div>
       <div class="input-val" style="font-size:15px;">${d.weather}</div>
     </div>
     <div class="input-row">
@@ -578,11 +618,15 @@ function refreshAll(){
 }
 
 // ── INIT ──────────────────────────────────────────────────
-document.getElementById('date-picker').value = clampDate(todayStr());
-document.getElementById('section-zone-label').textContent = `${ZONES[0].icon} ${ZONES[0].name}`;
-refreshAll();
-startCountdown();
-refreshTimerId = setInterval(()=>{ refreshAll(); startCountdown(); }, refreshIntervalMs);
+(async function(){
+  await fetchLiveWeather();
+  document.getElementById('date-picker').value = clampDate(todayStr());
+  document.getElementById('section-zone-label').textContent = `${ZONES[0].icon} ${ZONES[0].name}`;
+  refreshAll();
+  startCountdown();
+  refreshTimerId = setInterval(()=>{ refreshAll(); startCountdown(); }, refreshIntervalMs);
+  setInterval(()=>{ fetchLiveWeather().then(()=>{ refreshAll(); }); }, 10 * 60 * 1000);
+})();
 </script>
 </body>
 </html>

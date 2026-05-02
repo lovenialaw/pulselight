@@ -229,6 +229,43 @@ const ZONES = [
 ];
 const BRIGHT_MAP = {HIGH:100,MEDIUM:60,LOW:20,OFF:0};
 const WEATHER_ICONS = {Clear:'☀️',Cloudy:'☁️',Rain:'🌧️',Drizzle:'🌦️',Thunderstorm:'⛈️'};
+const BUKIT_LAT = 3.1478;
+const BUKIT_LON = 101.7053;
+let liveWeather = null;
+
+function wmoToWeatherLabel(code){
+  if(code === 0 || code === 1) return 'Clear';
+  if(code === 2 || code === 3) return 'Cloudy';
+  if(code >= 45 && code <= 48) return 'Cloudy';
+  if(code >= 51 && code <= 57) return 'Drizzle';
+  if(code >= 61 && code <= 67) return 'Rain';
+  if(code >= 71 && code <= 77) return 'Rain';
+  if(code >= 80 && code <= 82) return 'Rain';
+  if(code >= 85 && code <= 86) return 'Rain';
+  if(code >= 95) return 'Thunderstorm';
+  return 'Clear';
+}
+
+async function fetchLiveWeather(){
+  try{
+    const tz = encodeURIComponent('Asia/Kuala_Lumpur');
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${BUKIT_LAT}&longitude=${BUKIT_LON}&current=temperature_2m,weather_code&timezone=${tz}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(String(res.status));
+    const j = await res.json();
+    const c = j.current;
+    if(!c) throw new Error('no current');
+    liveWeather = {
+      label: wmoToWeatherLabel(c.weather_code),
+      tempC: c.temperature_2m,
+      code: c.weather_code
+    };
+  }catch(e){
+    console.warn('Open-Meteo (live weather) failed:', e);
+  }
+  return liveWeather;
+}
+
 const ZONE_COLORS = ['#a78bfa','#38bdf8','#fb923c','#4ade80'];
 
 let allZonesChart = null, zoneChart = null, combinedChart = null;
@@ -322,7 +359,7 @@ function renderZoneChips(dateStr){
       <div class="zone-chip-stat"><span class="zone-chip-key">Energy saved</span><span class="zone-chip-val" style="color:#39e07a">${s.saved}%</span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">AI total</span><span class="zone-chip-val">${s.totalAI} kWh</span></div>
       <div class="zone-chip-stat"><span class="zone-chip-key">Normal total</span><span class="zone-chip-val">${s.totalNormal} kWh</span></div>
-      <div class="zone-chip-stat"><span class="zone-chip-key">Weather</span><span class="zone-chip-val">${WEATHER_ICONS[s.weather]||''} ${s.weather}</span></div>
+      <div class="zone-chip-stat"><span class="zone-chip-key">Weather</span><span class="zone-chip-val">${liveWeather ? `${WEATHER_ICONS[liveWeather.label]||'🌤️'} ${liveWeather.label} · ${Number(liveWeather.tempC).toFixed(1)}°C <span style="opacity:0.55;font-size:9px;">(Open-Meteo · live)</span>` : `${WEATHER_ICONS[s.weather]||''} ${s.weather}`}</span></div>
     </div>`;
   }).join('');
 }
@@ -503,20 +540,6 @@ function setCombinedToday(){ document.getElementById('combined-date').value=clam
 function shiftCombinedDate(delta){ shiftDate('combined-date',delta); renderCombinedGraph(); }
 function onCombinedDateChange(){ renderCombinedGraph(); }
 
-// ── INIT ──────────────────────────────────────────────────
-const init=clamp(todayStr());
-document.getElementById('allzone-date').value=init;
-document.getElementById('zone-date').value=init;
-document.getElementById('combined-date').value=init;
-
-renderZoneChips(init);
-renderTotalMetrics(init);
-renderZonePills();
-renderAllZonesGraph();
-renderZoneGraph();
-renderCombinedGraph();
-renderEfficiencyTable(init);
-
 // ── ANALYTICS REFRESH INTERVAL ────────────────────────────
 let aRefreshMs = 30000;
 let aRefreshTimer = null;
@@ -552,8 +575,23 @@ function setAnalyticsInterval(secs){
   aRefreshTimer = setInterval(()=>{ refreshAnalyticsPanels(); startAnalyticsCountdown(); }, aRefreshMs);
 }
 
-// Start with 30s interval
-setAnalyticsInterval(30);
+// ── INIT (fetch live weather first so dashboard & analytics match) ──
+(async function(){
+  await fetchLiveWeather();
+  const init=clamp(todayStr());
+  document.getElementById('allzone-date').value=init;
+  document.getElementById('zone-date').value=init;
+  document.getElementById('combined-date').value=init;
+  renderZoneChips(init);
+  renderTotalMetrics(init);
+  renderZonePills();
+  renderAllZonesGraph();
+  renderZoneGraph();
+  renderCombinedGraph();
+  renderEfficiencyTable(init);
+  setAnalyticsInterval(30);
+  setInterval(()=>{ fetchLiveWeather().then(()=>{ renderZoneChips(clamp(document.getElementById('allzone-date').value)); }); }, 10*60*1000);
+})();
 </script>
 </body>
 </html>
