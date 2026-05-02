@@ -139,15 +139,12 @@
   </div>
   <div class="topbar-right">
     <div class="interval-group">
-      <span class="interval-label">Refresh</span>
-      <button class="interval-btn active" id="iv-10" onclick="setInterval_('10')">10s</button>
-      <button class="interval-btn"        id="iv-30" onclick="setInterval_('30')">30s</button>
-      <button class="interval-btn"        id="iv-60" onclick="setInterval_('60')">1m</button>
+      <span class="interval-label">Energy step</span>
+      <button class="interval-btn" id="iv-10" onclick="setAnalysisStepSec(10)">10s</button>
+      <button class="interval-btn active" id="iv-30" onclick="setAnalysisStepSec(30)">30s</button>
+      <button class="interval-btn" id="iv-60" onclick="setAnalysisStepSec(60)">1m</button>
     </div>
-    <div style="display:flex;align-items:center;gap:6px;">
-      <span class="refresh-countdown" id="countdown-text">next in 10s</span>
-      <div class="countdown-bar-wrap"><div class="countdown-bar" id="countdown-bar" style="width:100%"></div></div>
-    </div>
+    <div id="resolution-hint" style="font-family:var(--mono);font-size:9px;color:var(--c-muted);max-width:140px;line-height:1.35;">Charts &amp; comparisons use 30s kWh steps</div>
     <div id="clock-display">--:--:--</div>
     <button class="btn" onclick="refreshAll()">↻ Refresh</button>
     <a class="btn btn-analytics" href="analytics.html">📊 Analytics</a>
@@ -293,9 +290,6 @@ async function fetchLiveWeather(force){
 let selectedZone = 0;
 let chartInstance = null;
 let allZoneData = [];
-let refreshIntervalMs = 10000;
-let refreshTimerId = null;
-let countdownTimerId = null;
 
 // ── HELPERS ──────────────────────────────────────────────
 function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
@@ -370,52 +364,69 @@ function lstmPredictLevel(zoneIdx, dateStr, hourInt, currentPeople){
   return levelFromDemand(lstmEffectiveDemand(zoneIdx, dateStr, hourInt, currentPeople));
 }
 
-// ── Time-step / interval sampling (matches refresh: 10s · 30s · 60s) ──
-function secondsIntoCurrentHour(now){
-  return now.getMinutes() * 60 + now.getSeconds() + now.getMilliseconds() / 1000;
+// ── Time-step series (graphs & rollups use this bin size, not a refresh timer) ──
+let analysisStepSec = 30;
+
+function interpPeopleHour(zoneDay, h, tSecInHour){
+  const r0 = zoneDay[String(h)];
+  if(!r0) return 0;
+  const r1 = h < 23 ? zoneDay[String(h + 1)] : r0;
+  const frac = Math.min(1, tSecInHour / 3600);
+  return r0.p + (r1.p - r0.p) * frac;
 }
-function isDatasetDateToday(dateStr){
-  return clampDate(dateStr) === clampDate(todayStr());
-}
-/** People count linearly interpolated within the current clock hour from DS. */
-function interpolatedPeopleRaw(zoneIdx, dateStr, now){
+
+/** One day: kWh **per step** (stepSec wide) from interpolated crowd; labels sparse for axis, tooltips full time. */
+function getStepSeries(zoneIdx, dateStr, stepSec){
   const d = clampDate(dateStr);
-  const h = now.getHours();
   const zk = String(zoneIdx);
-  const row0 = DS[d]?.[zk]?.[String(h)];
-  if(!row0) return null;
-  const row1 = DS[d]?.[zk]?.[String(h + 1)] ?? row0;
-  const frac = secondsIntoCurrentHour(now) / 3600;
-  return row0.p + (row1.p - row0.p) * frac;
-}
-function hourlyKwhFromPeople(people){
-  return people * 0.0045 + 8;
-}
-function intervalSliceKwh(intervalSec, hourlyKwhRate){
-  return hourlyKwhRate * (intervalSec / 3600);
+  const zoneDay = DS[d]?.[zk];
+  if(!zoneDay) return null;
+  const sph = Math.floor(3600 / stepSec);
+  const fracHour = stepSec / 3600;
+  const labels = [];
+  const tooltips = [];
+  const normal = [];
+  const ai = [];
+  const tickEvery = Math.max(1, Math.floor(sph / 4));
+  for(let h = 0; h < 24; h++){
+    for(let k = 0; k < sph; k++){
+      const tInHour = Math.min(k * stepSec + stepSec * 0.5, 3599.5);
+      const p = Math.round(interpPeopleHour(zoneDay, h, tInHour));
+      const hourlyBase = p * 0.0045 + 8;
+      const nStep = hourlyBase * fracHour;
+      const level = lstmPredictLevel(zoneIdx, d, h, p);
+      const aStep = hourlyBase * (BRIGHT_MAP[level] / 100) * 0.85 * fracHour;
+      const secTotal = Math.round(tInHour);
+      const mm = String(Math.floor(secTotal / 60)).padStart(2,'0');
+      const ss = String(secTotal % 60).padStart(2,'0');
+      const hh = String(h).padStart(2,'0');
+      tooltips.push(`${hh}:${mm}:${ss}`);
+      labels.push((k % tickEvery === 0) ? `${hh}:${mm}` : '');
+      normal.push(+nStep.toFixed(5));
+      ai.push(+aStep.toFixed(5));
+    }
+  }
+  return { labels, normal, ai, tooltips, stepSec };
 }
 
 // ── GET ZONE DATA from real dataset ──────────────────────
 function getZoneData(zoneIdx){
-  const now = new Date();
   const date = clampDate(todayStr());
-  const hour = String(now.getHours());
-  const hourInt = now.getHours();
+  const hourInt = new Date().getHours();
+  const hour = String(hourInt);
   const zk   = String(zoneIdx);
-  const row  = DS[date]?.[zk]?.[hour];
+  const zoneDay = DS[date]?.[zk];
+  const row  = zoneDay?.[hour];
   if (!row) return null;
 
+  const now = new Date();
+  const secIntoHour = now.getMinutes() * 60 + now.getSeconds();
+  const bucket = Math.floor(secIntoHour / analysisStepSec);
+  const tCenter = Math.min(bucket * analysisStepSec + analysisStepSec / 2, 3599.5);
+  const pBase = interpPeopleHour(zoneDay, hourInt, tCenter);
   const jitter = 0.97 + Math.random() * 0.06;
-  const rawP = interpolatedPeopleRaw(zoneIdx, date, now);
-  const livePeople = Math.round((rawP != null ? rawP : row.p) * jitter);
+  const livePeople = Math.round(pBase * jitter);
   const level = lstmPredictLevel(zoneIdx, date, hourInt, livePeople);
-
-  const intervalSec = refreshIntervalMs / 1000;
-  const rateNormal = hourlyKwhFromPeople(livePeople);
-  const rateAi = rateNormal * (BRIGHT_MAP[level] / 100) * 0.85;
-  const sliceNormal = intervalSliceKwh(intervalSec, rateNormal);
-  const sliceAi = intervalSliceKwh(intervalSec, rateAi);
-  const intervalSavedPct = sliceNormal > 1e-6 ? Math.round((1 - sliceAi / sliceNormal) * 100) : 0;
 
   const weather = liveWeather ? liveWeather.label : row.w;
   const liveTemp = liveWeather
@@ -431,13 +442,9 @@ function getZoneData(zoneIdx){
     level,
     brightness:  BRIGHT_MAP[level],
     piezo:       randInt(100, 620),
-    harvested:   +(randInt(30, 80) * 0.1 * Math.sqrt(intervalSec / 60)).toFixed(1),
+    harvested:   +(randInt(30, 80) * 0.1).toFixed(1),
     battery:     randInt(35, 95),
-    intervalSec,
-    sliceNormalKwh: +sliceNormal.toFixed(4),
-    sliceAiKwh: +sliceAi.toFixed(4),
-    intervalSavedPct,
-    energySaved: intervalSavedPct,
+    energySaved: Math.round(25 + (BRIGHT_MAP[level] === 0 ? 65 : (100 - BRIGHT_MAP[level]) * 0.5)),
   };
 }
 
@@ -445,47 +452,8 @@ function generateAllZones(){
   allZoneData = ZONES.map((_, i) => getZoneData(i));
 }
 
-// ── HOURLY DATA for graph (people-derived kWh) ───────────
 function getHourlyData(zoneIdx, dateStr){
-  const d   = clampDate(dateStr);
-  const zk  = String(zoneIdx);
-  const zoneDay = DS[d]?.[zk];
-  if (!zoneDay) return null;
-
-  const now = new Date();
-  const today = isDatasetDateToday(d);
-  const hNow = now.getHours();
-  const fracHour = today ? secondsIntoCurrentHour(now) / 3600 : 1;
-
-  const hours  = Array.from({length:24}, (_,h)=>`${String(h).padStart(2,'0')}:00`);
-  const normal = hours.map((_,h) => {
-    if (today && h > hNow) return 0;
-    const row = zoneDay[String(h)];
-    if (!row) return 0;
-    if (today && h === hNow){
-      const raw = interpolatedPeopleRaw(zoneIdx, d, now);
-      const p = raw != null ? raw : row.p;
-      return +(hourlyKwhFromPeople(p) * fracHour).toFixed(2);
-    }
-    return +hourlyKwhFromPeople(row.p).toFixed(1);
-  });
-  const ai = hours.map((_,h) => {
-    if (today && h > hNow) return 0;
-    const row = zoneDay[String(h)];
-    if (!row) return 0;
-    if (today && h === hNow){
-      const raw = interpolatedPeopleRaw(zoneIdx, d, now);
-      const p = raw != null ? raw : row.p;
-      const pInt = Math.round(p);
-      const level = lstmPredictLevel(zoneIdx, d, h, pInt);
-      const dimFactor = BRIGHT_MAP[level] / 100;
-      return +(hourlyKwhFromPeople(p) * dimFactor * 0.85 * fracHour).toFixed(2);
-    }
-    const level = lstmPredictLevel(zoneIdx, d, h, row.p);
-    const dimFactor = BRIGHT_MAP[level] / 100;
-    return +(hourlyKwhFromPeople(row.p) * dimFactor * 0.85).toFixed(1);
-  });
-  return { hours, normal, ai };
+  return getStepSeries(zoneIdx, dateStr, analysisStepSec);
 }
 
 // ── CLOCK ─────────────────────────────────────────────────
@@ -515,27 +483,19 @@ function startPanelClock(){
   panelClockTimer = setInterval(tick,1000);
 }
 
-// ── REFRESH INTERVAL ──────────────────────────────────────
-function setInterval_(secs){
-  ['10','30','60'].forEach(s => document.getElementById('iv-'+s).classList.toggle('active', s===secs));
-  refreshIntervalMs = parseInt(secs) * 1000;
-  clearInterval(refreshTimerId);
-  clearInterval(countdownTimerId);
-  startCountdown();
-  refreshTimerId = setInterval(()=>{
-    fetchLiveWeather(false).finally(()=>{ refreshAll(); startCountdown(); });
-  }, refreshIntervalMs);
-}
-
-function startCountdown(){
-  const total = refreshIntervalMs / 1000;
-  let remaining = total;
-  const bar  = document.getElementById('countdown-bar');
-  const text = document.getElementById('countdown-text');
-  clearInterval(countdownTimerId);
-  function tick(){ remaining=Math.max(0,remaining-1); bar.style.width=(remaining/total*100)+'%'; text.textContent=`next in ${remaining}s`; }
-  tick();
-  countdownTimerId = setInterval(tick, 1000);
+// ── Resolution: bin size for all energy comparisons (not auto-refresh) ──
+function setAnalysisStepSec(sec){
+  analysisStepSec = sec;
+  ['10','30','60'].forEach(s => {
+    const el = document.getElementById('iv-'+s);
+    if(el) el.classList.toggle('active', parseInt(s,10) === sec);
+  });
+  const hint = document.getElementById('resolution-hint');
+  if(hint){
+    const lbl = sec >= 60 ? `${sec/60} min` : `${sec}s`;
+    hint.textContent = `Charts & comparisons use ${lbl} kWh steps`;
+  }
+  refreshAll();
 }
 
 // ── RENDER ZONE TABS ──────────────────────────────────────
@@ -629,35 +589,24 @@ function renderLightStatus(d){
 
 // ── RENDER ANALYTICS ──────────────────────────────────────
 function renderAnalytics(d){
-  const sec = d.intervalSec;
-  const n = d.sliceNormalKwh;
-  const a = d.sliceAiKwh;
-  const pct = d.intervalSavedPct;
-  const aiShare = n > 1e-6 ? Math.min(100, (a / n) * 100) : 0;
+  const aiUsage = 100 - d.energySaved;
+  const daily = (d.harvested * 24 / 1000).toFixed(2);
   document.getElementById('analytics-chips').innerHTML=`
     <div class="metric-chip">
-      <div class="metric-num" style="color:var(--c-green)">${pct}%</div>
-      <div class="metric-label">Saved vs normal · last ${sec}s</div>
+      <div class="metric-num" style="color:var(--c-green)">${d.energySaved}%</div>
+      <div class="metric-label">Energy saved vs normal</div>
     </div>
     <div class="metric-chip">
-      <div class="metric-num" style="color:var(--c-accent2)">${n.toFixed(3)}</div>
-      <div class="metric-label">Normal kWh · ${sec}s window</div>
-    </div>
-    <div class="metric-chip">
-      <div class="metric-num" style="color:var(--c-muted2)">${a.toFixed(3)}</div>
-      <div class="metric-label">AI kWh · ${sec}s window</div>
-    </div>
-    <div class="metric-chip">
-      <div class="metric-num" style="color:var(--c-med)">${sec}s</div>
-      <div class="metric-label">Sample interval (charts + compare)</div>
+      <div class="metric-num" style="color:var(--c-accent2)">${daily}</div>
+      <div class="metric-label">Est. daily harvest (kWh)</div>
     </div>`;
   document.getElementById('compare').innerHTML=`
     <div class="compare-row">
-      <div class="compare-label"><span>AI share of normal · ${sec}s</span><span style="color:var(--c-green)">${aiShare.toFixed(1)}%</span></div>
-      <div class="bar-track"><div class="bar-seg" style="width:${aiShare}%;background:var(--c-green)"></div></div>
+      <div class="compare-label"><span>AI system · ${ZONES[d.zoneIdx].name}</span><span style="color:var(--c-green)">${aiUsage}%</span></div>
+      <div class="bar-track"><div class="bar-seg" style="width:${aiUsage}%;background:var(--c-green)"></div></div>
     </div>
     <div class="compare-row">
-      <div class="compare-label"><span>Normal · ${ZONES[d.zoneIdx].name}</span><span>100%</span></div>
+      <div class="compare-label"><span>Rule-based / Normal</span><span>100%</span></div>
       <div class="bar-track"><div class="bar-seg" style="width:100%;background:var(--c-muted)"></div></div>
     </div>`;
 }
@@ -665,23 +614,24 @@ function renderAnalytics(d){
 // ── RENDER GRAPH ──────────────────────────────────────────
 function renderGraph(){
   const dateStr = document.getElementById('date-picker').value;
-  const data = getHourlyData(selectedZone, dateStr);
+  const data = getStepSeries(selectedZone, dateStr, analysisStepSec);
   const zone = ZONES[selectedZone];
+  const stepLbl = analysisStepSec >= 60 ? `${analysisStepSec/60} min` : `${analysisStepSec}s`;
 
-  const step = refreshIntervalMs / 1000;
   document.getElementById('graph-label').textContent =
-    `6 — Daily usage · ${zone.name} · kWh · ${formatDate(dateStr)} · sample ${step}s · today’s hour grows with time`;
+    `6 — Daily usage · ${zone.name} · AI vs Normal (kWh per ${stepLbl} step) · ${formatDate(dateStr)}`;
 
   const ctx = document.getElementById('usageChart').getContext('2d');
   if(chartInstance) chartInstance.destroy();
 
   if(!data){ ctx.clearRect(0,0,500,220); return; }
 
+  const dense = data.labels.length > 120;
   chartInstance = new Chart(ctx,{
     type:'line',
-    data:{labels:data.hours, datasets:[
-      {label:'Normal system', data:data.normal, borderColor:'rgba(138,150,173,0.7)', backgroundColor:'rgba(138,150,173,0.06)', borderWidth:1.5, pointRadius:2, pointHoverRadius:5, tension:0.4, fill:true},
-      {label:'AI system',     data:data.ai,     borderColor:'rgba(57,224,122,0.85)',  backgroundColor:'rgba(57,224,122,0.07)',  borderWidth:2,   pointRadius:2, pointHoverRadius:5, tension:0.4, fill:true}
+    data:{labels:data.labels, datasets:[
+      {label:'Normal system', data:data.normal, borderColor:'rgba(138,150,173,0.7)', backgroundColor:'rgba(138,150,173,0.06)', borderWidth:1.5, pointRadius:dense?0:2, pointHoverRadius:5, tension:0.25, fill:true},
+      {label:'AI system',     data:data.ai,     borderColor:'rgba(57,224,122,0.85)',  backgroundColor:'rgba(57,224,122,0.07)',  borderWidth:2,   pointRadius:dense?0:2, pointHoverRadius:5, tension:0.25, fill:true}
     ]},
     options:{
       responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
@@ -691,18 +641,21 @@ function renderGraph(){
         titleFont:{family:"'IBM Plex Mono',monospace",size:10},
         bodyFont:{family:"'IBM Plex Mono',monospace",size:11}, padding:10,
         callbacks:{
-          title: items=>`${items[0].label}  —  ${zone.name}`,
-          label: item=>` ${item.dataset.label}: ${item.parsed.y} kWh`,
+          title: items=>{
+            const i = items[0].dataIndex;
+            return `${data.tooltips[i]} — ${zone.name}`;
+          },
+          label: item=>` ${item.dataset.label}: ${item.parsed.y.toFixed(4)} kWh`,
           afterBody: items=>{
             if(items.length<2) return [];
-            const saved = ((items[0].parsed.y - items[1].parsed.y)/items[0].parsed.y*100).toFixed(0);
-            return [``, ` AI saves ${saved}% at this hour`];
+            const saved = ((items[0].parsed.y - items[1].parsed.y)/Math.max(1e-6,items[0].parsed.y)*100).toFixed(0);
+            return [``, ` AI saves ${saved}% this step`];
           }
         }
       }},
       scales:{
-        x:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:9},maxRotation:0,maxTicksLimit:12},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'}},
-        y:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:9}},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'},title:{display:true,text:'kWh',color:'#5a6478',font:{size:9}}}
+        x:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:8},maxRotation:0,maxTicksLimit:24},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'}},
+        y:{ticks:{color:'#5a6478',font:{family:"'IBM Plex Mono',monospace",size:9}},grid:{color:'rgba(255,255,255,0.03)'},border:{color:'rgba(255,255,255,0.05)'},title:{display:true,text:'kWh / step',color:'#5a6478',font:{size:9}}}
       }
     }
   });
@@ -763,11 +716,8 @@ function refreshAll(){
   dp.max = histMaxDate();
   dp.value = clampDate(todayStr());
   document.getElementById('section-zone-label').textContent = `${ZONES[0].icon} ${ZONES[0].name}`;
-  refreshAll();
-  startCountdown();
-  refreshTimerId = setInterval(()=>{
-    fetchLiveWeather(false).finally(()=>{ refreshAll(); startCountdown(); });
-  }, refreshIntervalMs);
+  setAnalysisStepSec(30);
+  setInterval(()=>{ fetchLiveWeather(false).finally(()=>{ refreshAll(); }); }, 90000);
 })();
 </script>
 </body>
